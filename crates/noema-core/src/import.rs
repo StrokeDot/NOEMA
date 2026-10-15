@@ -89,6 +89,9 @@ pub fn prepare(root: &Path, path: &Path) -> Result<PreparedImport> {
         }
         dest.write_all(&bytes)?;
         dest.sync_all()?;
+        // On Windows an open writer can interfere with a second handle reading
+        // the PDF, even after sync_all. Close the writer before parsing.
+        drop(dest);
         let mut p = PreparedImport {
             source_id,
             name,
@@ -146,7 +149,6 @@ pub fn prepare(root: &Path, path: &Path) -> Result<PreparedImport> {
         }
         Ok(p)
     })();
-    drop(dest);
     if result.is_err() {
         let _ = fs::remove_file(&original);
     }
