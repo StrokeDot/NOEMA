@@ -272,7 +272,7 @@ fn backup_reopens_and_migration_is_repeatable() {
         b.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        1
+        2
     );
 }
 #[test]
@@ -318,4 +318,49 @@ fn chunk_boundaries_remain_searchable_and_unicode_safe() {
     .as_array()
     .unwrap()
     .is_empty());
+}
+
+#[test]
+fn book_gems_persist_preserve_original_and_isolate_books() {
+    let d=tempfile::tempdir().unwrap();
+    let mut store=Store::open(d.path()).unwrap();
+    let a=project(&mut store,"Book A");
+    let b=project(&mut store,"Book B");
+    let chapter_a=chapter(&mut store,&a);
+    let chapter_b=chapter(&mut store,&b);
+    let quote="An argument improves when its meaning survives disagreement.";
+    let id=call(&mut store,"save_gem",json!({"project_id":a,"chapter_id":chapter_a,"kind":"Quote","text":quote,"origin":"AI Assistant","source_label":"Conversation 12","status":"Candidate","notes":"Maybe intro"}))["id"].as_str().unwrap().to_owned();
+    assert!(store.request("save_gem",json!({"project_id":a,"chapter_id":chapter_b,"kind":"Quote","text":"wrong","origin":"Author","status":"Candidate"})).is_err());
+    assert_eq!(call(&mut store,"gems",json!({"project_id":b})),json!([]));
+    assert_eq!(call(&mut store,"gems",json!({"project_id":a,"chapter_id":chapter_a})).as_array().unwrap().len(),1);
+    call(&mut store,"save_gem",json!({"project_id":a,"id":id,"chapter_id":chapter_a,"kind":"Reasoning","text":"Rewritten version","origin":"AI Assistant","status":"Approved","notes":"Refine"}));
+    assert!(store.request("save_gem",json!({"project_id":b,"id":id,"kind":"Quote","text":"hijack","origin":"Author","status":"Candidate"})).is_err());
+    drop(store);
+    let mut store=Store::open(d.path()).unwrap();
+    let gem=call(&mut store,"gems",json!({"project_id":a}));
+    assert_eq!(gem[0]["text"],"Rewritten version");
+    assert_eq!(gem[0]["original_text"],quote);
+    assert_eq!(gem[0]["origin"],"AI Assistant");
+    assert_eq!(gem[0]["source_label"],"Conversation 12");
+    assert_eq!(gem[0]["status"],"Approved");
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+    call(&mut store,"delete_gem",json!({"project_id":a,"id":id}));
+    assert_eq!(call(&mut store,"gems",json!({"project_id":a})),json!([]));
+    assert_eq!(store.conn.query_row("SELECT count(*) FROM book_gems WHERE id=?",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
+}
+
+#[test]
+fn book_gem_migration_from_v1_preserves_existing_memories() {
+    let d=tempfile::tempdir().unwrap();
+    let mut s=Store::open(d.path()).unwrap();
+    let p=project(&mut s,"An existing book");
+    let mid=call(&mut s,"save_memory",json!({"project_id":p,"category":"Writing Instructions","title":"Style","body":"Keep original voice"}))["id"].as_str().unwrap().to_string();
+    // Simulate a v0.1 database missing the gems table but retaining manuscripts/memory.
+    s.conn.execute_batch("DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
+    drop(s);
+    let mut s=Store::open(d.path()).unwrap();
+    let memories=call(&mut s,"memories",json!({"project_id":p}));
+    assert_eq!(memories[0]["id"],mid);
+    assert_eq!(memories[0]["body"],"Keep original voice");
+    assert_eq!(call(&mut s,"gems",json!({"project_id":p})),json!([]));
 }

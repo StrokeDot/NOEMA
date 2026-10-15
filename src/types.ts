@@ -57,3 +57,22 @@ export type Revision = {
   html?: string;
   text?: string;
 };
+
+export const gemKinds = ["Quote", "Reasoning", "Argument", "Draft Passage"] as const;
+export const gemOrigins = ["Author", "AI Assistant", "Research Source", "Unspecified"] as const;
+export const gemStatuses = ["Candidate", "Approved", "Used"] as const;
+export type BookGem = {
+  id: string;
+  project_id: string;
+  chapter_id: string | null;
+  kind: (typeof gemKinds)[number];
+  original_text: string;
+  text: string;
+  notes: string;
+  origin: (typeof gemOrigins)[number];
+  source_label: string;
+  status: (typeof gemStatuses)[number];
+  created_at: number;
+  updated_at: number;
+};
+export type GemDraft = Pick<BookGem,"chapter_id"|"kind"|"text"|"notes"|"origin"|"source_label"|"status"> & {id?:string};

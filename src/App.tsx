@@ -8,17 +8,20 @@ import type { Project, Chapter, Document, Source } from "./types";
 import Manuscript from "./Editor";
 import Research, { Search, SourceReader } from "./Research";
 import MemoryView from "./Memory";
+import GemsView from "./Gems";
+import type { GemDraft } from "./types";
 type View =
-  "Write" | "Research" | "Conversations" | "Memory" | "Preview" | "Settings";
+  "Write" | "Research" | "Conversations" | "Memory" | "Gems" | "Preview" | "Settings";
 const views: View[] = [
   "Write",
   "Research",
   "Conversations",
   "Memory",
+  "Gems",
   "Preview",
   "Settings",
 ];
-const symbols = ["✎", "▤", "☷", "◇", "▥", "⚙"];
+const symbols = ["✎", "▤", "☷", "◇", "❖", "▥", "⚙"];
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
@@ -33,6 +36,7 @@ export default function App() {
   const [research, setResearch] = useState(true);
   const [focus, setFocus] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
+  const [captureGem, setCaptureGem] = useState<Partial<GemDraft> | null>(null);
   const [theme, setTheme] = useState(
     () => localStorage.getItem("noema-theme") ?? "light",
   );
@@ -237,6 +241,8 @@ export default function App() {
                   ? "Manuscript"
                   : v === "Memory"
                     ? "Project memory"
+                    : v === "Gems"
+                      ? "Book gems"
                     : v === "Preview"
                       ? "Book preview"
                       : v}
@@ -352,6 +358,19 @@ export default function App() {
             <span> / {view}</span>
           </div>
           <div className="top-actions">
+            {project && <button title="Save a passage to Book Gems" onClick={() => {
+              const selected = window.getSelection()?.toString().trim() ?? "";
+              setCaptureGem({
+                text: selected,
+                chapter_id: doc?.id ?? null,
+                kind: "Quote",
+                origin: view === "Write" ? "Author" : "Unspecified",
+                source_label: view === "Write" && doc ? `Manuscript: ${doc.title}` : "",
+                notes: "",
+                status: "Candidate",
+              });
+              changeView("Gems");
+            }}>❖ Save passage</button>}
             <button
               onClick={() => setTheme(theme === "light" ? "dark" : "light")}
               aria-label="Toggle theme"
@@ -420,6 +439,14 @@ export default function App() {
               <MemoryView
                 key={project.id}
                 project={project.id}
+                onError={report}
+              />
+            ) : view === "Gems" ? (
+              <GemsView
+                project={project.id}
+                chapters={chapters}
+                capture={captureGem}
+                onCaptureHandled={() => setCaptureGem(null)}
                 onError={report}
               />
             ) : view === "Preview" ? (

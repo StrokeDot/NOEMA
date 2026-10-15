@@ -64,7 +64,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 1 {
+        if ver > 2 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -72,6 +72,11 @@ impl Store {
         if ver < 1 {
             let tx = conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("schema.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 2 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v2_book_gems.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -285,6 +290,43 @@ impl Store {
                     "DELETE FROM memories WHERE id=? AND project_id=?",
                     params![required(&a, "id")?, required(&a, "project_id")?],
                 )?;
+                Ok(json!(true))
+            }
+            "gems" => {
+                let project = required(&a, "project_id")?;
+                let chapter = string(&a, "chapter_id");
+                let category = string(&a, "kind");
+                let q = string(&a, "query");
+                rows(&self.conn,
+                    "SELECT * FROM book_gems WHERE project_id=? AND deleted=0 AND (?='' OR chapter_id=?) AND (?='' OR kind=?) AND (instr(lower(text),lower(?))>0 OR instr(lower(notes),lower(?))>0) ORDER BY updated_at DESC,id LIMIT 100 OFFSET ?",
+                    params![project,chapter,chapter,category,category,q,q,offset(&a)])
+            }
+            "save_gem" => {
+                let project = required(&a, "project_id")?;
+                let text = required(&a, "text")?.trim();
+                if text.len() > 100_000 { return Err("Book gem is too long".into()); }
+                let kind = required(&a, "kind")?;
+                let origin = required(&a, "origin")?;
+                let status = required(&a, "status")?;
+                let chapter = a["chapter_id"].as_str().filter(|s| !s.is_empty());
+                if let Some(cid) = chapter {
+                    let found: i64 = self.conn.query_row(
+                        "SELECT count(*) FROM chapters WHERE id=? AND project_id=? AND deleted=0",
+                        params![cid,project],|r|r.get(0))?;
+                    if found != 1 { return Err("Chapter must belong to this book".into()); }
+                }
+                let gid = a["id"].as_str().filter(|s| !s.is_empty()).map(str::to_string).unwrap_or_else(id);
+                let affected = self.conn.execute(
+                    "INSERT INTO book_gems(id,project_id,chapter_id,kind,original_text,text,notes,origin,source_label,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET chapter_id=excluded.chapter_id,kind=excluded.kind,text=excluded.text,notes=excluded.notes,status=excluded.status,updated_at=excluded.updated_at WHERE book_gems.project_id=excluded.project_id AND book_gems.deleted=0",
+                    params![gid,project,chapter,kind,text,text,string(&a,"notes"),origin,string(&a,"source_label"),status,now(),now()])?;
+                if affected == 0 { return Err("Gem not found in this book".into()); }
+                Ok(json!({"id":gid}))
+            }
+            "delete_gem" => {
+                let affected = self.conn.execute(
+                    "UPDATE book_gems SET deleted=1,updated_at=? WHERE id=? AND project_id=? AND deleted=0",
+                    params![now(),required(&a,"id")?,required(&a,"project_id")?])?;
+                if affected == 0 { return Err("Gem not found in this book".into()); }
                 Ok(json!(true))
             }
             "storage" => Ok(json!({

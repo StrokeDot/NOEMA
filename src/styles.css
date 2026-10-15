@@ -1024,3 +1024,15 @@ main {
     flex-wrap: wrap;
   }
 }
+/* Book Gems: candidate prose, separate from authoritative project memory. */
+.gem-filters { display:grid; grid-template-columns: minmax(150px, 2fr) minmax(130px,1fr) minmax(130px,1fr); gap:12px; margin: 16px 0 24px; }
+.gem-list { display:grid; gap:14px; }
+.gem-card { background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:20px; }
+.gem-card blockquote { border-left:3px solid var(--accent); margin:18px 0 12px; padding:4px 0 4px 18px; font-family:Georgia,serif; font-size:18px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
+.gem-card p { white-space:pre-wrap; }
+.gem-metadata { display:flex; align-items:center; gap:9px; flex-wrap:wrap; font-size:11px; color:var(--muted); }
+.gem-card details { padding:10px 0; font-size:12px; }
+.gem-actions { justify-content:flex-end; margin-top:14px; }
+.gem-modal { max-height:90vh; overflow-y:auto; }
+.gem-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+@media (max-width:650px) { .gem-filters, .gem-form-grid {grid-template-columns:1fr;} .gem-card {padding:14px;} }

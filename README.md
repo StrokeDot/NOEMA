@@ -134,3 +134,9 @@ Optional: `npm run format` and `cargo fmt --manifest-path crates/noema-core/Carg
 - The app has no encrypted vault; privacy relies on your local Windows account/disk protections.
 
 Immediate next gate: verify the included Windows workflow and perform the ten-step acceptance checklist in `docs/VERIFICATION.md`. Then **NOEMA 0.2**: project-grounded AI answers with direct citations to original passages, bounded retrieval, user-approved memory promotion, and provider choice.
+
+### Book Gems (0.1.x foundation)
+
+NOEMA now includes a **Book Gems** workspace for candidate quotations, reasoning, arguments, and draft passages, grouped by chapter. Highlight text and use **Save passage** in the top toolbar, or open Book Gems to type/paste a passage. Each entry has attribution and source notes, status (Candidate / Approved / Used), and an editable version that keeps the original capture intact. These items are separate from established project memory and never modify manuscript text automatically.
+
+Microphone capture, voice commands, assistant response capture, and objection repetition tracking are planned integrations, **not yet available**. See `docs/BOOK_GEMS_AND_ARGUMENT_LEDGER.md` for their specification.
