@@ -1,0 +1,13 @@
+{
+  "identifier": "main",
+  "description": "Local desktop window and explicit file selection only",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "core:window:allow-destroy"
+  ]
+}

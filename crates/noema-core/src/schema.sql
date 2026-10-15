@@ -1,0 +1,17 @@
+CREATE TABLE projects(id TEXT PRIMARY KEY,title TEXT NOT NULL,author TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',settings TEXT NOT NULL DEFAULT '{}',created_at INTEGER NOT NULL);
+CREATE TABLE chapters(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),title TEXT NOT NULL,position INTEGER NOT NULL,html TEXT NOT NULL DEFAULT '<p></p>',text TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL,deleted INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX chapter_project ON chapters(project_id,deleted,position);
+CREATE TABLE revisions(id TEXT PRIMARY KEY,chapter_id TEXT NOT NULL REFERENCES chapters(id),html TEXT NOT NULL,text TEXT NOT NULL,created_at INTEGER NOT NULL);
+CREATE INDEX revision_chapter ON revisions(chapter_id,created_at);
+CREATE TABLE sources(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),name TEXT NOT NULL,kind TEXT NOT NULL,original_path TEXT NOT NULL,tags TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,warning TEXT NOT NULL DEFAULT '');
+CREATE INDEX source_project ON sources(project_id,created_at);
+CREATE TABLE messages(id TEXT PRIMARY KEY,source_id TEXT NOT NULL REFERENCES sources(id),conversation_id TEXT NOT NULL,conversation_title TEXT NOT NULL,node_id TEXT NOT NULL,parent_id TEXT,sequence INTEGER NOT NULL,speaker TEXT NOT NULL,text TEXT NOT NULL,timestamp TEXT,raw_json TEXT NOT NULL);
+CREATE INDEX message_source ON messages(source_id,sequence);
+CREATE TABLE passages(id INTEGER PRIMARY KEY,source_id TEXT NOT NULL REFERENCES sources(id),project_id TEXT NOT NULL REFERENCES projects(id),location TEXT NOT NULL,text TEXT NOT NULL);
+CREATE INDEX passage_source ON passages(source_id,id);
+CREATE VIRTUAL TABLE passage_fts USING fts5(text,content='passages',content_rowid='id',tokenize='unicode61 remove_diacritics 2');
+CREATE TRIGGER passages_ai AFTER INSERT ON passages BEGIN INSERT INTO passage_fts(rowid,text) VALUES (new.id,new.text); END;
+CREATE TRIGGER passages_ad AFTER DELETE ON passages BEGIN INSERT INTO passage_fts(passage_fts,rowid,text) VALUES('delete',old.id,old.text); END;
+CREATE TABLE memories(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),category TEXT NOT NULL CHECK(category IN ('Established Positions','Open Questions','Research Notes','Writing Instructions')),title TEXT NOT NULL,body TEXT NOT NULL,source_id TEXT REFERENCES sources(id),updated_at INTEGER NOT NULL);
+CREATE INDEX memory_project ON memories(project_id,category);
+PRAGMA user_version=1;
