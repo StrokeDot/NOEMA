@@ -140,9 +140,10 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
     fullPage: true,
   });
   await page.setViewportSize({ width: 720, height: 1000 });
-  await page
-    .getByRole("button", { name: "Hide research", exact: true })
-    .click();
+  await expect(page.locator(".research-panel")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show research", exact: true }).click();
+  await expect(page.locator(".research-panel")).toBeVisible();
+  await page.getByRole("button", { name: "Close research panel", exact: true }).click();
   await expect(manuscript).toBeVisible();
   expect(
     await page.evaluate(
@@ -154,4 +155,25 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
     fullPage: true,
   });
   expect(errors).toEqual([]);
+});
+
+
+test("a narrow window opens with an unobstructed writing workspace", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "+ New writing project" })).toBeVisible();
+  const modal = page.getByRole("dialog", { name: "New writing project" });
+  if (!(await modal.isVisible())) await page.getByRole("button", { name: "+ New writing project" }).click();
+  await modal.getByLabel("Book title", { exact: true }).fill("Small-window book");
+  await modal.getByLabel("Author", { exact: true }).fill("Author");
+  await modal.getByRole("button", { name: "Create writing project" }).click();
+  await expect(modal).toBeHidden();
+  await expect(page.locator(".research-panel")).toHaveCount(0);
+  page.once("dialog", d => d.accept("An accessible chapter"));
+  await page.getByRole("button", { name: "Create a chapter", exact: true }).click();
+  await page.locator("[contenteditable=true]").fill("Writing on a smaller screen.");
+  await expect(page.getByText("● Saved on this computer")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("[contenteditable=true]")).toContainText("Writing on a smaller screen.");
+  await expect(page.locator(".research-panel")).toHaveCount(0);
 });

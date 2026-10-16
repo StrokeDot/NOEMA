@@ -42,7 +42,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [newProject, setNewProject] = useState(false);
   const [nav, setNav] = useState(false);
-  const [research, setResearch] = useState(true);
+  const [research, setResearch] = useState(
+    () => window.matchMedia("(min-width: 1051px)").matches,
+  );
   const [focus, setFocus] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
   const [captureGem, setCaptureGem] = useState<Partial<GemDraft> | null>(null);
@@ -91,6 +93,12 @@ export default function App() {
       live = false;
     };
   }, [activate, report]);
+  useEffect(() => {
+    const wide = window.matchMedia("(min-width: 1051px)");
+    const collapse = () => { if (!wide.matches) setResearch(false); };
+    wide.addEventListener("change", collapse);
+    return () => wide.removeEventListener("change", collapse);
+  }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("noema-theme", theme);

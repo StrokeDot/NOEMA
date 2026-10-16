@@ -50,3 +50,10 @@ See https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645.
 
 The workflow retains a JSON report and screenshot separately from the installer.
 A passing browser test alone is not reported as an installed Windows test.
+
+The installed-app test also exposed a small-window usability bug: at widths of
+1050 pixels or less, the research panel becomes an overlay but was initially open,
+covering the first-chapter button. The panel now starts collapsed at those widths
+and collapses when a window enters that layout. Authors can still explicitly open
+and close it. A browser regression creates and reopens a chapter at 1024 × 768;
+the native test exercises the same first-chapter action without forced clicks.
