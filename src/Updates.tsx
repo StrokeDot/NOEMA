@@ -74,6 +74,8 @@ export default function Updates({
       <p>To keep NOEMA private, authorize downloads with a <strong>fine-grained GitHub access token</strong> for
         <code>StrokeDot/NOEMA</code>. Grant only <strong>Actions: Read</strong> for this repository.
         Set an expiration and never share the token in chat or commit it to GitHub.</p>
+      <button type="button" disabled={busy} onClick={()=>void invoke("open_github_token_setup")
+        .catch(e=>onError(errorText(e)))}>Open GitHub token setup</button>
       <label>GitHub access token
         <input type="password" autoComplete="off" spellCheck={false}
           placeholder="Paste your fine-grained read-only GitHub token"
