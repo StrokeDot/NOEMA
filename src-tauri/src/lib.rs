@@ -48,6 +48,18 @@ fn open_update_downloads() -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     Err("Update downloads are currently supported on Windows.".into())
 }
+#[tauri::command]
+fn open_github_token_setup() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg("https://github.com/settings/personal-access-tokens/new")
+            .spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("Private GitHub updater setup is currently supported on Windows.".into())
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -59,7 +71,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            request, open_update_downloads,
+            request, open_update_downloads, open_github_token_setup,
             private_updates::update_status,
             private_updates::update_connect,
             private_updates::update_disconnect,
