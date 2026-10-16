@@ -8,6 +8,7 @@ import type { Project, Chapter, Document, Source } from "./types";
 import Manuscript from "./Editor";
 import ScriptStudio from "./ScriptStudio";
 import Updates from "./Updates";
+import ChatPanel from "./ChatPanel";
 import Research, { Search, SourceReader } from "./Research";
 import MemoryView from "./Memory";
 import GemsView from "./Gems";
@@ -48,6 +49,7 @@ export default function App() {
     () => window.matchMedia("(min-width: 1051px)").matches,
   );
   const [focus, setFocus] = useState(false);
+  const [chatOpen,setChatOpen] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
   const [captureGem, setCaptureGem] = useState<Partial<GemDraft> | null>(null);
   const [theme, setTheme] = useState(
@@ -155,12 +157,12 @@ export default function App() {
       }
       setNav(false);
     });
-  async function attachWritingSources() {
+  async function attachWritingSources(navigate=true) {
     if (!project) return;
     try {
       const selected = import.meta.env.DEV && import.meta.env.VITE_NOEMA_TEST_BRIDGE==="1"
         ? (window as unknown as {__NOEMA_TEST_FILES__?:string[]}).__NOEMA_TEST_FILES__??[]
-        : await open({multiple:true,filters:[{name:"Book and script research",extensions:["txt","md","markdown","json","pdf"]}]});
+        : await open({multiple:true,filters:[{name:"Book and script research",extensions:["txt","md","markdown","json","pdf","docx","epub"]}]});
       if (!selected) return;
       const files=Array.isArray(selected)?selected:[selected];
       if (!files.length)return;
@@ -170,10 +172,52 @@ export default function App() {
           try{await request("import",{project_id:project.id,path})}
           catch(e){failed.push(path.split(/[\\/]/).pop()+": "+errorText(e))}
         }
-        setView("Research");
+        if(navigate)setView("Research");
         if(failed.length)report(failed.join("\n"));
       });
     } catch(e){report(errorText(e))}
+  }
+  async function openCreatedChapter(id:string){
+    if(!project)return;
+    setChapters(await request<Chapter[]>("chapters",{project_id:project.id}));
+    flushRef.current=async()=>{};
+    setDoc(await request<Document>("chapter",{project_id:project.id,id}));
+    setView("Write");
+  }
+  async function createChatChapter(title:string,text:string){
+    if(!project)return;
+    await action(async()=>{
+      const result=await request<{id:string}>("create_chapter_from_text",
+        {project_id:project.id,title,text});
+      await openCreatedChapter(result.id);
+    });
+  }
+  async function replaceChatChapter(text:string){
+    if(!project||!doc)return;
+    await action(async()=>{
+      const latest=await request<Document>("chapter",{id:doc.id,project_id:project.id});
+      const escape=(v:string)=>v.replace(/&/g,"&amp;").replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      const html=text.split(/\n\n+/).filter(x=>x.trim()).map(v=>
+        "<p>"+escape(v).replace(/\n/g,"<br>")+"</p>").join("");
+      await request("save_chapter",{
+        id:doc.id,project_id:project.id,version:latest.version,
+        html,text,snapshot:true,
+      });
+      const updated=await request<Document>("chapter",{id:doc.id,project_id:project.id});
+      setDoc(updated);
+    });
+  }
+  async function importSourceChapter(source:Source){
+    if(!project)return;
+    const title=window.prompt("New chapter title",source.name.replace(/\.[^.]+$/,""));
+    if(!title?.trim())return;
+    if(!window.confirm("Import the extracted text of "+source.name+" into a new editable chapter? The original source stays in the Research library."))return;
+    await action(async()=>{
+      const result=await request<{id:string}>("create_chapter_from_source",
+        {project_id:project.id,source_id:source.id,title});
+      await openCreatedChapter(result.id);
+    });
   }
   async function reloadChapters() {
     if (project)
@@ -405,7 +449,7 @@ export default function App() {
           </>}
           <div className="nav-footer">
             <span className="local-dot" />
-            Local & private<span>Version 0.1.2</span>
+            Local & private<span>Version 0.1.3</span>
           </div>
         </aside>
       )}
@@ -425,6 +469,11 @@ export default function App() {
           <div className="top-actions">
             {project && <button className="attach-source-button" title="Attach books and supporting sources to this writing project" onClick={()=>void attachWritingSources()}>
               + Attach sources
+            </button>}
+            {project && <button aria-pressed={chatOpen}
+              title="Open the project writing chat alongside the manuscript"
+              onClick={()=>{setChatOpen(!chatOpen);if(!chatOpen)setResearch(false)}}>
+              {chatOpen?"Hide AI chat":"Open AI chat"}
             </button>}
             {project && <button title="Save a passage to Writing Gems" onClick={() => {
               const selected = window.getSelection()?.toString().trim() ?? "";
@@ -490,7 +539,7 @@ export default function App() {
                 <Manuscript
                   script={!!isScript}
                   disabled={busy}
-                  key={doc.id}
+                  key={`${doc.id}:${doc.version}`}
                   doc={doc}
                   onFlush={registerFlush}
                   onError={report}
@@ -513,6 +562,7 @@ export default function App() {
                 conversations={view === "Conversations"}
                 onOpen={setSource}
                 onError={report}
+                onChapterCreated={importSourceChapter}
               />
             ) : view === "Memory" ? (
               <MemoryView
@@ -560,7 +610,20 @@ export default function App() {
               />
             )}
           </section>
-          {project && research && !focus && (
+          {project && chatOpen && !focus && <ChatPanel key={project.id}
+            project={project}
+            activeChapter={view==="Write"?doc:null}
+            onError={report}
+            onCreateChapter={createChatChapter}
+            onReplaceChapter={replaceChatChapter}
+            onGem={text=>{
+              setCaptureGem({text,kind:"Reasoning",origin:"AI Assistant",status:"Candidate",
+                chapter_id:doc?.id??null,source_label:"NOEMA project chat"});
+              changeView("Gems");
+            }}
+            onAttach={async()=>attachWritingSources(false)}
+          />}
+          {project && research && !chatOpen && !focus && (
             <>
               <div
                 className="resize-handle"

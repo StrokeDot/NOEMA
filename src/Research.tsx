@@ -223,13 +223,14 @@ export default function Research({
   project,
   conversations,
   onOpen,
-  onError,
+  onError,onChapterCreated,
 }: {
   script?: boolean;
   project: string;
   conversations: boolean;
   onOpen: (s: Source) => void;
   onError: (s: string) => void;
+  onChapterCreated?: (s:Source)=>Promise<void>;
 }) {
   const [sources, setSources] = useState<Source[]>([]);
   const [page, setPage] = useState(0);
@@ -283,7 +284,7 @@ export default function Research({
               filters: [
                 {
                   name: "Research & conversations",
-                  extensions: ["txt", "md", "markdown", "json", "pdf"],
+                  extensions: ["txt", "md", "markdown", "json", "pdf", "docx", "epub"],
                 },
               ],
             });
@@ -338,10 +339,12 @@ export default function Research({
             .map(f=><span key={f.id} className="badge">{f.title} · {f.perspective}</span>)}</div>
         </div>}
         <p><strong>Research sources:</strong> attach primary texts, supporting books, critical perspectives,
-          and background references for this project. The AI connection is still being developed.</p>
+          and background references for this project. The connected OpenAI API or Ollama model can reference matching source passages from this project.</p>
       </section>}
       <p className="notice">
-        Attach TXT · Markdown · JSON conversations · text-based PDF. Original files remain saved locally
+        Attach TXT · Markdown · JSON conversations · text-based PDF · Word DOCX · DRM-free EPUB.
+        Export Google Docs as Word DOCX first. Older Word DOC and protected ebooks are not supported.
+        Original files remain saved locally
         and searchable within this project. Up to 256 MiB per file.
       </p>
       <div className="memory-tools">
@@ -395,9 +398,22 @@ export default function Research({
                     {s.tags && ` · ${s.tags}`}
                   </p>
                   {s.role && <small className="source-role">{s.role}</small>}
+                  {!!s.working_document && <small className="source-role">Current working document</small>}
                   {s.use_guidance && <small>{s.use_guidance}</small>}
                   {s.warning && <small>{s.warning}</small>}
                 </div>
+                {!conversations && <button onClick={async()=>{
+                  try{
+                    await request("set_working_document",{project_id:project,source_id:s.id,
+                      enabled:!s.working_document});
+                    setRefresh(n=>n+1);
+                  }catch(e){onError(errorText(e))}
+                }}>{s.working_document?"Unset working draft":"Use as working draft"}</button>}
+                {!conversations && onChapterCreated &&
+                  <button title="Create an editable chapter from this source's extracted text"
+                    onClick={()=>void onChapterCreated(s).catch(e=>onError(errorText(e)))}>
+                    Create chapter
+                  </button>}
                 {!conversations && <button onClick={()=>{
                   setSourceEdit(s);setRole(s.role??"Supporting");setGuidance(s.use_guidance??"");
                 }}>Use in book</button>}

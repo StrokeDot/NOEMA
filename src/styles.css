@@ -1156,3 +1156,28 @@ main {
 .noema-updater input[type=password]{display:block;width:100%;margin:9px 0 14px;}
 .noema-updater .updater-available{border-top:1px solid var(--line);padding-top:15px;margin-top:15px;}
 .noema-updater .local-dot{display:inline-block;margin-right:8px;}
+
+/* Two-pane author chat and editable manuscript; research remains available as another view. */
+.ai-chat{flex:0 0 400px;min-width:290px;max-width:48vw;border-left:1px solid var(--line);
+ background:var(--paper);display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden;}
+.ai-chat-heading{padding:16px 18px 4px;display:flex;justify-content:space-between;align-items:center;}
+.ai-chat-heading h2{font-size:20px;margin:5px 0;}
+.ai-chat-intro{margin:6px 18px 12px;font-size:12px;line-height:1.5;color:var(--muted);}
+.ai-chat-history{flex:1;overflow-y:auto;padding:12px 16px;min-height:0;}
+.ai-chat-empty{background:var(--panel);padding:16px;border-radius:10px;font-size:13px;line-height:1.6;}
+.ai-message{margin:0 0 15px;border-radius:12px;padding:12px;background:var(--panel);}
+.ai-message.user{background:var(--accent-soft);margin-left:16px;}
+.ai-message-author{font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);margin-bottom:7px;}
+.ai-message-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.7;}
+.ai-message-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px;}
+.ai-message-actions button{font-size:11px;padding:6px;}
+.ai-composer{padding:12px 15px;border-top:1px solid var(--line);background:var(--paper);}
+.ai-composer textarea{width:100%;resize:vertical;max-height:190px;min-height:64px;}
+.ai-chat-controls{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:9px;}
+.ai-chat-notice{font-size:12px;margin:4px 16px 10px;color:var(--muted);}
+.ai-provider-settings{padding:15px 18px;max-height:45vh;overflow-y:auto;background:var(--panel);font-size:12px;}
+.ai-provider-settings h3{margin:0 0 10px;}
+.ai-provider-settings p{line-height:1.5;}
+.ai-provider-settings input,.ai-provider-settings select{width:100%;margin-top:7px;}
+@media(max-width:1150px){.ai-chat{flex-basis:350px;}}
+@media(max-width:750px){.ai-chat{position:absolute;inset:0 0 0 auto;max-width:100%;width:100%;z-index:15;}}

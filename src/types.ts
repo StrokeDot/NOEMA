@@ -29,6 +29,7 @@ export type Source = {
   tags: string;
   role?: "Supporting" | "Primary Reference" | "Critical Perspective" | "Background";
   use_guidance?: string;
+  working_document?: number;
   created_at: number;
   warning: string;
 };
