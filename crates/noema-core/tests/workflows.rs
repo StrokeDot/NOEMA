@@ -343,7 +343,7 @@ fn book_gems_persist_preserve_original_and_isolate_books() {
     assert_eq!(gem[0]["origin"],"AI Assistant");
     assert_eq!(gem[0]["source_label"],"Conversation 12");
     assert_eq!(gem[0]["status"],"Approved");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),3);
     call(&mut store,"delete_gem",json!({"project_id":a,"id":id}));
     assert_eq!(call(&mut store,"gems",json!({"project_id":a})),json!([]));
     assert_eq!(store.conn.query_row("SELECT count(*) FROM book_gems WHERE id=?",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
@@ -356,11 +356,60 @@ fn book_gem_migration_from_v1_preserves_existing_memories() {
     let p=project(&mut s,"An existing book");
     let mid=call(&mut s,"save_memory",json!({"project_id":p,"category":"Writing Instructions","title":"Style","body":"Keep original voice"}))["id"].as_str().unwrap().to_string();
     // Simulate a v0.1 database missing the gems table but retaining manuscripts/memory.
-    s.conn.execute_batch("DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
+    s.conn.execute_batch("DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
     drop(s);
     let mut s=Store::open(d.path()).unwrap();
     let memories=call(&mut s,"memories",json!({"project_id":p}));
     assert_eq!(memories[0]["id"],mid);
     assert_eq!(memories[0]["body"],"Keep original voice");
     assert_eq!(call(&mut s,"gems",json!({"project_id":p})),json!([]));
+}
+
+#[test]
+fn scripts_and_reusable_frameworks_respect_project_activation() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    let book = project(&mut store, "A book");
+    let script = call(&mut store, "create_project",
+        json!({"title":"A video essay","author":"Writer","project_type":"Video Script"}))["id"]
+        .as_str().unwrap().to_string();
+    let projects = call(&mut store, "projects", json!({}));
+    assert_eq!(projects.as_array().unwrap().iter().find(|v|v["id"]==script).unwrap()["project_type"],"Video Script");
+    assert_eq!(projects.as_array().unwrap().iter().find(|v|v["id"]==book).unwrap()["project_type"],"Book");
+    assert!(store.request("create_project",
+        json!({"title":"Invalid","author":"Writer","project_type":"Podcast"})).is_err());
+
+    let draft = call(&mut store,"save_framework",json!({
+        "title":"Free will","perspective":"Author","principles":"Humans have genuine choice.",
+        "qualifications":"Do not equate freedom with lack of influence.",
+        "source_label":"Author principles.md","status":"Draft"
+    }))["id"].as_str().unwrap().to_string();
+    assert!(store.request("set_framework_active",
+        json!({"project_id":script,"framework_id":draft,"active":true})).is_err());
+
+    call(&mut store,"save_framework",json!({
+        "id":draft,"title":"Free will","perspective":"Author",
+        "principles":"Genuine freedom matures with character.",
+        "qualifications":"Freedom is not lack of influence.","status":"Confirmed"
+    }));
+    call(&mut store,"set_framework_active",
+        json!({"project_id":script,"framework_id":draft,"active":true}));
+    assert_eq!(call(&mut store,"framework_context",json!({"project_id":book})),json!([]));
+    let active=call(&mut store,"framework_context",json!({"project_id":script}));
+    assert_eq!(active[0]["perspective"],"Author");
+    assert_eq!(active[0]["principles"],"Genuine freedom matures with character.");
+    assert_eq!(call(&mut store,"frameworks",json!({"project_id":script}))[0]["original_text"],"Humans have genuine choice.");
+
+    let external=call(&mut store,"save_framework",json!({
+        "title":"Another thinker","perspective":"External","principles":"Different premises",
+        "status":"Confirmed"}))["id"].as_str().unwrap().to_string();
+    call(&mut store,"set_framework_active",json!({"project_id":script,"framework_id":external,"active":true}));
+    assert_eq!(call(&mut store,"framework_context",json!({"project_id":script})).as_array().unwrap().len(),2);
+    drop(store);
+    let mut reopened=Store::open(dir.path()).unwrap();
+    assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})).as_array().unwrap().len(),2);
+    call(&mut reopened,"archive_framework",json!({"id":draft}));
+    assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})).as_array().unwrap().len(),1);
+    assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":book})),json!([]));
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),3);
 }
