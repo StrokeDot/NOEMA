@@ -414,7 +414,7 @@ fn scripts_and_reusable_frameworks_respect_project_activation() {
         "perspective":"External","principles":"Different premises","status":"Draft"}));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})),json!([]));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":book})),json!([]));
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),4);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),5);
 }
 
 #[test]
@@ -466,7 +466,7 @@ fn channel_profiles_group_scripts_and_references_respect_opt_in() {
     let mut reopened=Store::open(dir.path()).unwrap();
     assert_eq!(call(&mut reopened,"channel_scripts",json!({"channel_id":channel_b}))[0]["script_status"],"Published");
     assert_eq!(call(&mut reopened,"channels",json!({})).as_array().unwrap().len(),2);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),4);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),5);
 }
 #[test]
 fn legacy_script_migrates_without_losing_its_manuscript() {
