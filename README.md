@@ -151,3 +151,14 @@ NOEMA now distinguishes **Book** from **Video Script** projects. Both use the sa
 The **Core Frameworks** library is shared locally across writing projects but **not automatically activated** across them. Frameworks may belong to the Author or represent External, Character, or Custom standpoints. Imported text is initially **Draft**. You must review and confirm it before enabling it for a project. The original text is retained separately from later edits. Confirming a framework means the transcription represents that perspective, not that the claims have been proven.
 
 Future model integration will support three reasoning modes: **Within framework**, **Compare frameworks**, and **Critical evaluation**. The database already exposes only confirmed and active frameworks to the planned AI context contract; NOEMA does not currently send them to any AI service. See [Script and framework specification](docs/SCRIPTS_AND_FRAMEWORKS.md) and [Author memory requirements](docs/AUTHOR_MEMORY_CONTRACT.md).
+
+## Channel-first video scripts (v0.1.x)
+
+Create a **Channel profile** from the left navigation before making a new video script. Profiles capture mission, audience, voice, editorial guidelines and recurring subject areas. You can type a profile or import a local TXT, Markdown, or JSON text file. Imported original wording is retained separately. Profiles are unconfirmed until you review and confirm them.
+
+When creating a new **Video Script** project, choose a channel (or quickly create one in the project form). The project switcher groups video scripts by channel. Open the **Channel profiles** view to see each channel's scripts and make another script under it. Script status can be set to **Draft**, **In Production**, or **Published** in Settings.
+
+The **Compare existing scripts** panel searches passages from other script projects. By default it searches Published scripts in the current channel. To include other channels, explicitly check **Include other channels**. Each result identifies its original channel and source script. Script text is not silently copied into a new manuscript.
+
+**Important:** The AI conversation/model integration is still future work. The database can return confirmed channel profiles and explicitly selected cross-channel script references, but NOEMA does not yet send them to an AI or reason over them automatically. Existing online YouTube videos and ChatGPT conversations are not automatically imported. See [Channel Script Library](docs/CHANNEL_SCRIPT_LIBRARY.md).
+
