@@ -1049,3 +1049,32 @@ main {
 .framework-toggle input { width: 16px; height: 16px; }
 .framework-modal { max-height: 88vh; overflow-y: auto; }
 @media (max-width: 760px) { .framework-actions { width: 100%; } .framework-card-controls { justify-content: flex-start; } }
+
+/* Each channel has its own editorial identity and script library. */
+.channel-picker {display:flex;gap:10px;flex-wrap:wrap;margin:20px 0;}
+.channel-picker button {display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:160px;}
+.channel-picker button.channel-picked {background:var(--accent-soft);border-color:var(--accent);}
+.channel-picker small {font-weight:400;}
+.channel-profile-fields {display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px;margin-top:16px;}
+.channel-profile-fields section {background:var(--panel);padding:14px;border-radius:8px;}
+.channel-profile-fields strong {font-size:12px;}
+.channel-profile-fields p,.channel-prose {white-space:pre-wrap;overflow-wrap:anywhere;}
+.channel-script-header {margin:28px 0 15px;flex-wrap:wrap;}
+.channel-script-header p {color:var(--muted);}
+.channel-script-row {display:flex;justify-content:space-between;gap:15px;align-items:center;}
+.channel-script-row p {color:var(--muted);margin-bottom:3px;}
+.channel-script-row strong {font-size:15px;}
+.channel-comparison {border-top:1px solid var(--line);padding-top:28px;margin-top:35px;}
+.channel-compare-options {display:flex;gap:24px;flex-wrap:wrap;margin:14px 0;}
+.channel-compare-options label,.channel-confirm {display:flex;align-items:center;gap:8px;margin:0 !important;}
+.channel-compare-options input,.channel-confirm input {width:16px;height:16px;}
+.channel-results {margin-top:20px;}
+.channel-modal {max-height:90vh;overflow:auto;}
+@media (max-width:720px){.channel-profile-fields{grid-template-columns:1fr;}.channel-script-row{align-items:flex-start;flex-wrap:wrap;}}
+
+/* Group video scripts by editorial channel in the project switcher. */
+.channel-create-inline{padding:12px;border:1px solid var(--line);border-radius:8px;margin:12px 0;}
+.channel-quick-add{display:flex;gap:10px;margin:10px 0;}
+.channel-quick-add input{flex:1;min-width:0;}
+.channel-quick-add button{flex-shrink:0;}
+@media(max-width:700px){.channel-quick-add{flex-wrap:wrap;}}

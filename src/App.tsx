@@ -10,22 +10,27 @@ import Research, { Search, SourceReader } from "./Research";
 import MemoryView from "./Memory";
 import GemsView from "./Gems";
 import FrameworksView from "./Frameworks";
+import ChannelsView from "./Channels";
+import type { ChannelProfile } from "./types";
 import type { GemDraft } from "./types";
 type View =
-  "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Gems" | "Preview" | "Settings";
+  "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings";
 const views: View[] = [
   "Write",
   "Research",
   "Conversations",
   "Memory",
   "Frameworks",
+  "Channels",
   "Gems",
   "Preview",
   "Settings",
 ];
-const symbols = ["✎", "▤", "☷", "◇", "◈", "❖", "▥", "⚙"];
+const symbols = ["✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "⚙"];
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [channels, setChannels] = useState<ChannelProfile[]>([]);
+  const [newScriptChannel, setNewScriptChannel] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [doc, setDoc] = useState<Document | null>(null);
@@ -46,6 +51,7 @@ export default function App() {
   const flushRef = useRef<() => Promise<void>>(async () => {});
   const lock = useRef(false);
   const report = useCallback((s: string) => setError(s), []);
+  const reloadChannels = useCallback(async () => { const data=await request<ChannelProfile[]>("channels");setChannels(data);return data; }, []);
   const registerFlush = useCallback((fn: () => Promise<void>) => {
     flushRef.current = fn;
   }, []);
@@ -64,6 +70,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     let live = true;
+    request<ChannelProfile[]>("channels").then(setChannels).catch(e=>report(errorText(e)));
     request<Project[]>("projects")
       .then(async (ps) => {
         if (!live) return;
@@ -216,16 +223,21 @@ export default function App() {
                 if (p) void action(() => activate(p));
               }}
             >
-              {!project && <option value="">Choose your book</option>}
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
+              {!project && <option value="">Choose your writing project</option>}
+              <optgroup label="Books">{projects.filter(p=>p.project_type==="Book").map(p=>
+                <option key={p.id} value={p.id}>{p.title}</option>)}</optgroup>
+              {channels.map(c=><optgroup key={c.id} label={c.name}>
+                {projects.filter(p=>p.project_type==="Video Script" && p.channel_id===c.id)
+                  .map(p=><option key={p.id} value={p.id}>{p.title}</option>)}
+              </optgroup>)}
+              <optgroup label="Unassigned video scripts">
+                {projects.filter(p=>p.project_type==="Video Script" && !p.channel_id)
+                  .map(p=><option key={p.id} value={p.id}>{p.title}</option>)}
+              </optgroup>
             </select>
             <button
               className="new-project"
-              onClick={() => void action(async () => setNewProject(true))}
+              onClick={() => void action(async () => {setNewScriptChannel(null);setNewProject(true);})}
             >
               + New writing project
             </button>
@@ -245,6 +257,8 @@ export default function App() {
                     ? "Project memory"
                     : v === "Frameworks"
                       ? "Core frameworks"
+                    : v === "Channels"
+                      ? "Channel profiles"
                     : v === "Gems"
                       ? "Writing gems"
                     : v === "Preview"
@@ -447,6 +461,16 @@ export default function App() {
               />
             ) : view === "Frameworks" ? (
               <FrameworksView key={project.id} project={project.id} onError={report} />
+            ) : view === "Channels" ? (
+              <ChannelsView
+                channels={channels}
+                projects={projects}
+                currentProject={project}
+                onSaved={reloadChannels}
+                onError={report}
+                onOpenScript={p=>void action(()=>activate(p))}
+                onNewScript={channelId=>{setNewScriptChannel(channelId);setNewProject(true)}}
+              />
             ) : view === "Gems" ? (
               <GemsView
                 project={project.id}
@@ -460,6 +484,7 @@ export default function App() {
             ) : (
               <Settings
                 project={project}
+                channels={channels}
                 theme={theme}
                 setTheme={setTheme}
                 onError={report}
@@ -527,6 +552,13 @@ export default function App() {
       )}
       {newProject && (
         <ProjectForm
+          channels={channels}
+          initialChannelId={newScriptChannel}
+          onCreateChannel={async name=>{
+            const saved=await request<{id:string}>("save_channel",{name,confirmed:false});
+            await reloadChannels();
+            return saved.id;
+          }}
           canCancel={!!project}
           onCancel={() => setNewProject(false)}
           onCreate={async (fields) => {
@@ -538,6 +570,7 @@ export default function App() {
             setProjects(ps);
             await activate(ps.find((p) => p.id === added.id)!);
             setNewProject(false);
+            setNewScriptChannel(null);
           }}
         />
       )}
@@ -545,17 +578,20 @@ export default function App() {
   );
 }
 function ProjectForm({
-  canCancel,
-  onCancel,
-  onCreate,
+  canCancel, onCancel, onCreate, channels, initialChannelId, onCreateChannel,
 }: {
   canCancel: boolean;
   onCancel: () => void;
   onCreate: (fields: Record<string, string>) => Promise<void>;
+  channels: ChannelProfile[];
+  initialChannelId: string | null;
+  onCreateChannel: (name:string)=>Promise<string>;
 }) {
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
-  const [projectType, setProjectType] = useState<"Book" | "Video Script">("Book");
+  const [projectType, setProjectType] = useState<"Book" | "Video Script">(initialChannelId?"Video Script":"Book");
+  const [channelId,setChannelId] = useState(initialChannelId??"");
+  const [newChannelName,setNewChannelName] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -574,6 +610,7 @@ function ProjectForm({
               title: title.trim(),
               author: author.trim(),
               project_type: projectType,
+              channel_id: projectType==="Video Script" ? channelId : "",
               description,
             });
           } catch (err) {
@@ -597,6 +634,25 @@ function ProjectForm({
             <option value="Video Script">Video script</option>
           </select>
         </label>
+        {projectType === "Video Script" && <div className="channel-create-inline">
+          <label>Channel
+            <select aria-label="Video script channel" required value={channelId}
+              onChange={e=>setChannelId(e.target.value)}>
+              <option value="">Choose a channel profile</option>
+              {channels.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <div className="channel-quick-add">
+            <input aria-label="New channel name" placeholder="Or create a new channel" value={newChannelName}
+              onChange={e=>setNewChannelName(e.target.value)} />
+            <button type="button" disabled={busy||!newChannelName.trim()} onClick={async()=>{
+              setBusy(true);
+              try{const id=await onCreateChannel(newChannelName.trim());setChannelId(id);setNewChannelName("");}
+              catch(e){setError(errorText(e))}finally{setBusy(false)}
+            }}>+ Create channel</button>
+          </div>
+          <small>You can refine the channel's profile in Channel profiles after creating the script.</small>
+        </div>}
         <label>
           {projectType === "Book" ? "Book title" : "Video script title"}
           <input
@@ -638,7 +694,7 @@ function ProjectForm({
           )}
           <button
             className="primary"
-            disabled={busy || !title.trim() || !author.trim()}
+            disabled={busy || !title.trim() || !author.trim() || (projectType==="Video Script" && !channelId)}
           >
             {busy ? "Creating…" : "Create writing project →"}
           </button>
@@ -728,12 +784,14 @@ function Preview({
 }
 function Settings({
   project,
+  channels,
   theme,
   setTheme,
   onError,
   onUpdated,
 }: {
   project: Project;
+  channels: ChannelProfile[];
   theme: string;
   setTheme: (s: string) => void;
   onError: (s: string) => void;
@@ -743,6 +801,8 @@ function Settings({
   const [author, setAuthor] = useState(project.author);
   const [description, setDescription] = useState(project.description);
   const [projectType, setProjectType] = useState<"Book" | "Video Script">(project.project_type);
+  const [channelId,setChannelId] = useState(project.channel_id??"");
+  const [scriptStatus,setScriptStatus] = useState(project.script_status);
   const [path, setPath] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -766,6 +826,8 @@ function Settings({
               author,
               description,
               project_type: projectType,
+              channel_id: projectType==="Video Script" ? channelId : "",
+              script_status: scriptStatus,
               settings: JSON.parse(project.settings),
             });
             await onUpdated();
@@ -784,6 +846,19 @@ function Settings({
             <option value="Video Script">Video script</option>
           </select>
         </label>
+        {projectType === "Video Script" && <>
+          <label>Channel
+            <select value={channelId} onChange={e=>setChannelId(e.target.value)}>
+              <option value="">Unassigned (legacy scripts only)</option>
+              {channels.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <label>Production status
+            <select value={scriptStatus} onChange={e=>setScriptStatus(e.target.value as Project["script_status"])}>
+              <option>Draft</option><option>In Production</option><option>Published</option>
+            </select>
+          </label>
+        </>}
         <label>
           Project title
           <input

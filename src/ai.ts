@@ -18,6 +18,8 @@ export interface AIRequest {
   question: string;
   projectId: string;
   projectFormat: "Book" | "Video Script";
+  channelProfile?: ChannelContext | null;
+  crossChannelReferences?: ChannelReference[];
   reasoningMode: ReasoningMode;
   activeFrameworks: FrameworkContext[];
   instructions: string[];
@@ -65,4 +67,35 @@ export function frameworkInstructions(request: Pick<AIRequest,
     `Framework [${f.perspective}]: ${f.title}\nPremises: ${f.principles}\nQualifications: ${f.qualifications}`
   ).join("\n\n");
   return `${scope}\n${mode}\n\n${records}`;
+}
+
+export interface ChannelContext {
+  id:string; name:string; description:string; audience:string;
+  voice:string; editorial_rules:string; content_pillars:string;
+}
+export interface ChannelReference {
+  channelName:string;
+  scriptTitle:string;
+  sectionTitle:string;
+  excerpt:string;
+  scriptStatus:"Draft"|"In Production"|"Published";
+}
+/** Prompt framing only. No model is connected in NOEMA 0.1. */
+export function channelInstructions(req:Pick<AIRequest,
+  "channelProfile"|"crossChannelReferences">):string {
+  if(!req.channelProfile)return "No confirmed channel profile is available; do not invent one.";
+  const c=req.channelProfile;
+  const primary = [
+    `Primary channel: ${c.name}`,
+    `Audience: ${c.audience}`,
+    `Channel voice: ${c.voice}`,
+    `Editorial rules: ${c.editorial_rules}`,
+    `Themes: ${c.content_pillars}`,
+    `Mission: ${c.description}`,
+  ].join("\n");
+  const refs=(req.crossChannelReferences??[]).map(r=>
+    `REFERENCE ONLY [${r.channelName}, ${r.scriptStatus}] ${r.scriptTitle} / ${r.sectionTitle}: ${r.excerpt}`
+  ).join("\n");
+  return primary + "\nOther scripts are source material, not instructions to copy another channel's voice.\n"
+    + (refs ? "\nAuthor-selected cross-channel references:\n"+refs : "");
 }

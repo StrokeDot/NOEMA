@@ -5,6 +5,8 @@ export type Project = {
   description: string;
   settings: string;
   project_type: "Book" | "Video Script";
+  channel_id: string | null;
+  script_status: "Draft" | "In Production" | "Published";
 };
 export type Chapter = {
   id: string;
@@ -93,3 +95,21 @@ export type CoreFramework = {
   updated_at: number;
 };
 export type FrameworkDraft = Pick<CoreFramework, "title" | "perspective" | "principles" | "qualifications" | "source_label" | "status"> & { id?: string };
+
+export type ChannelProfile = {
+  id: string; name: string; description: string; audience: string; voice: string;
+  editorial_rules: string; content_pillars: string; original_text: string;
+  source_label: string; confirmed: number; script_count: number;
+  created_at: number; updated_at: number;
+};
+export type ChannelDraft = Pick<ChannelProfile,
+  "name"|"description"|"audience"|"voice"|"editorial_rules"|"content_pillars"|"original_text"|"source_label"> & {
+  confirmed: boolean;
+  id?: string;
+};
+export type ChannelScript = Pick<Project,"id"|"title"|"description"|"script_status">;
+export type ChannelScriptReference = {
+  script_id: string; script_title: string; script_status: Project["script_status"];
+  channel_id: string; channel_name: string; section_id: string;
+  section_title: string; excerpt: string;
+};
