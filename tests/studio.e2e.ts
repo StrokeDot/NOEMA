@@ -69,7 +69,13 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   await expect(
     page.getByText("1 file(s) imported.", { exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Search research").fill("responsibility");
+  await page.getByRole("button", {name:"Use in book"}).click();
+  const panel=page.getByRole("dialog", {name:"Source guidance"});
+  await panel.getByLabel("Role in the argument").selectOption("Critical Perspective");
+  await panel.getByLabel("Instructions for using this source").fill("Review this passage in context.");
+  await panel.getByRole("button", {name:"Save source guidance"}).click();
+  await expect(page.locator(".source-card")).toContainText("Critical Perspective");
+    await page.getByLabel("Search research").fill("responsibility");
   await expect(page.locator(".search-result")).toHaveCount(1);
   await expect(page.locator(".search-result")).toContainText("Page 2");
   await page.locator(".search-result").click();
