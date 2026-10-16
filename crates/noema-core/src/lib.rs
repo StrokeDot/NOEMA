@@ -64,7 +64,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 2 {
+        if ver > 3 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -79,6 +79,11 @@ impl Store {
             tx.execute_batch(include_str!("migrations/v2_book_gems.sql"))?;
             tx.commit()?;
         }
+        if ver < 3 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v3_script_frameworks.sql"))?;
+            tx.commit()?;
+        }
         Ok(Self { conn, root })
     }
     pub fn request(&mut self, action: &str, a: Value) -> Result<Value> {
@@ -90,21 +95,25 @@ impl Store {
                 if title.len() > 500 || author.len() > 500 {
                     return Err("Title or author is too long".into());
                 }
+                let kind = a["project_type"].as_str().unwrap_or("Book");
+                if kind != "Book" && kind != "Video Script" { return Err("Unsupported project type".into()); }
                 let id = id();
-                self.conn
-                    .execute("INSERT INTO projects(id,title,author,description,created_at) VALUES(?,?,?,?,?)", params![id, title, author, string(&a, "description"), now()])?;
+                self.conn.execute(
+                    "INSERT INTO projects(id,title,author,description,project_type,created_at) VALUES(?,?,?,?,?,?)",
+                    params![id,title,author,string(&a,"description"),kind,now()])?;
                 Ok(json!({
                 "id":id}
                 ))
             }
             "update_project" => {
                 self.conn.execute(
-                    "UPDATE projects SET title=?,author=?,description=?,settings=? WHERE id=?",
+                    "UPDATE projects SET title=?,author=?,description=?,settings=?,project_type=COALESCE(NULLIF(?,''),project_type) WHERE id=?",
                     params![
                         required(&a, "title")?,
                         required(&a, "author")?,
                         string(&a, "description"),
                         a["settings"].to_string(),
+                        string(&a, "project_type"),
                         required(&a, "project_id")?
                     ],
                 )?;
