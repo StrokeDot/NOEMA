@@ -4,7 +4,7 @@
 import { chromium, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 if (process.platform !== 'win32' || !process.env.CI || !process.env.RUNNER_TEMP)
@@ -56,10 +56,14 @@ async function launch(executable) {
 }
 try {
   const bundle = resolve('src-tauri/target/release/bundle/nsis');
-  const installers = (await readdir(bundle)).filter(f => f.endsWith('.exe'));
-  if (installers.length !== 1) throw new Error('Expected exactly one NSIS installer.');
+  const version = JSON.parse(await readFile(resolve('src-tauri/tauri.conf.json'), 'utf8')).version;
+  const expected = `NOEMA_${version}_x64-setup.exe`;
+  const installers = (await readdir(bundle)).filter(f => f.toLowerCase().endsWith('.exe'));
+  if (!installers.includes(expected))
+    throw new Error(`Current NSIS installer ${expected} not found; available installers: ${installers.join(', ')}`);
+  // Use the exact target version, never a cached installer from a prior release.
   // NSIS requires /D to be the final argument, without embedded quotes.
-  const currentInstaller = join(bundle, installers[0]);
+  const currentInstaller = join(bundle, expected);
   let initialInstaller = currentInstaller;
   if (process.env.NOEMA_BASELINE_DIR) {
     const files = (await readdir(process.env.NOEMA_BASELINE_DIR)).filter(f => f.endsWith('.exe'));
