@@ -156,6 +156,7 @@ export default function ChannelsView({
               <span className="badge">{r.channel_name}</span><span>{r.script_status}</span>
             </div>
             <h3>{r.script_title} · {r.section_title}</h3>
+            {r.section_kind && <small>{r.section_kind}</small>}
             <p className="channel-prose">{r.excerpt||"(No text in this section.)"}</p>
             <button onClick={()=>{
               const target=projects.find(p=>p.id===r.script_id);

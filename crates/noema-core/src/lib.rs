@@ -510,9 +510,18 @@ impl Store {
                 let include_other=a["include_other_channels"].as_bool().unwrap_or(false);
                 let published_only=a["published_only"].as_bool().unwrap_or(true);
                 let phrase=string(&a,"query");
-                rows(&self.conn,
-                    "SELECT p.id AS script_id,p.title AS script_title,p.script_status,ch.id AS channel_id,ch.name AS channel_name,c.id AS section_id,c.title AS section_title,substr(c.text,1,800) AS excerpt FROM projects p JOIN channel_profiles ch ON ch.id=p.channel_id JOIN chapters c ON c.project_id=p.id AND c.deleted=0 WHERE p.project_type='Video Script' AND p.id<>? AND (?=1 OR p.channel_id=?) AND (?=0 OR p.script_status='Published') AND (?='' OR instr(lower(p.title),lower(?))>0 OR instr(lower(c.title),lower(?))>0 OR instr(lower(c.text),lower(?))>0) ORDER BY p.created_at DESC,c.position LIMIT 60",
-                    params![pid,if include_other {1} else {0},channel,if published_only {1} else {0},phrase,phrase,phrase,phrase])
+                let same_channel=if include_other {1} else {0};
+                let only_published=if published_only {1} else {0};
+                let freeform=rows(&self.conn,
+                    "SELECT p.id AS script_id,p.title AS script_title,p.script_status,ch.id AS channel_id,ch.name AS channel_name,c.id AS section_id,c.title AS section_title,substr(c.text,1,800) AS excerpt,'Freeform section' AS section_kind FROM projects p JOIN channel_profiles ch ON ch.id=p.channel_id JOIN chapters c ON c.project_id=p.id AND c.deleted=0 WHERE p.project_type='Video Script' AND p.id<>? AND (?=1 OR p.channel_id=?) AND (?=0 OR p.script_status='Published') AND (?='' OR instr(lower(p.title),lower(?))>0 OR instr(lower(c.title),lower(?))>0 OR instr(lower(c.text),lower(?))>0) ORDER BY p.created_at DESC,c.position LIMIT 60",
+                    params![pid,same_channel,channel,only_published,phrase,phrase,phrase,phrase])?;
+                let structured=rows(&self.conn,
+                    "SELECT p.id AS script_id,p.title AS script_title,p.script_status,ch.id AS channel_id,ch.name AS channel_name,c.id AS section_id,c.heading AS section_title,substr(c.narration,1,800) AS excerpt,'Production cue' AS section_kind FROM projects p JOIN channel_profiles ch ON ch.id=p.channel_id JOIN script_cues c ON c.project_id=p.id AND c.deleted=0 WHERE p.project_type='Video Script' AND p.id<>? AND (?=1 OR p.channel_id=?) AND (?=0 OR p.script_status='Published') AND (?='' OR instr(lower(p.title),lower(?))>0 OR instr(lower(c.heading),lower(?))>0 OR instr(lower(c.narration),lower(?))>0 OR instr(lower(c.visuals),lower(?))>0 OR instr(lower(c.evidence_notes),lower(?))>0) ORDER BY p.created_at DESC,c.position LIMIT 60",
+                    params![pid,same_channel,channel,only_published,phrase,phrase,phrase,phrase,phrase,phrase])?;
+                let mut combined=freeform.as_array().ok_or("Expected search results")?.clone();
+                combined.extend(structured.as_array().ok_or("Expected scene results")?.iter().cloned());
+                combined.truncate(60);
+                Ok(Value::Array(combined))
             }
             "frameworks" => {
                 let pid = required(&a, "project_id")?;

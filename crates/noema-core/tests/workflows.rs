@@ -460,8 +460,14 @@ fn channel_profiles_group_scripts_and_references_respect_opt_in() {
     call(&mut s,"update_project",json!({"project_id":script_b,"title":"A critique","author":"Writer",
         "description":"","project_type":"Video Script","channel_id":channel_b,
         "script_status":"Published","settings":{}}));
-    assert_eq!(call(&mut s,"channel_script_references",json!({
-        "project_id":script_a,"include_other_channels":true,"query":"redemption"})).as_array().unwrap().len(),1);
+    let cue=call(&mut s,"create_script_cue",json!({"project_id":script_b,"heading":"Scene source"}))["id"].as_str().unwrap().to_string();
+    call(&mut s,"save_script_cue",json!({"project_id":script_b,"id":cue,"version":0,
+        "heading":"Scene source","narration":"Here is a redemption comparison",
+        "visuals":"Relevant video clip","status":"Draft"}));
+    let cross=call(&mut s,"channel_script_references",json!({
+        "project_id":script_a,"include_other_channels":true,"query":"redemption"}));
+    assert_eq!(cross.as_array().unwrap().len(),2);
+    assert!(cross.as_array().unwrap().iter().any(|r|r["section_kind"]=="Production cue"));
     drop(s);
     let mut reopened=Store::open(dir.path()).unwrap();
     assert_eq!(call(&mut reopened,"channel_scripts",json!({"channel_id":channel_b}))[0]["script_status"],"Published");

@@ -111,7 +111,7 @@ export type ChannelScript = Pick<Project,"id"|"title"|"description"|"script_stat
 export type ChannelScriptReference = {
   script_id: string; script_title: string; script_status: Project["script_status"];
   channel_id: string; channel_name: string; section_id: string;
-  section_title: string; excerpt: string;
+  section_title: string; excerpt: string; section_kind?: string;
 };
 
 export const cueStatuses = ["Draft", "Ready", "Recorded"] as const;
