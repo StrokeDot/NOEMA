@@ -62,8 +62,8 @@ export default function GemsView({
       <div className="view-heading">
         <div>
           <div className="eyebrow">PASSAGES WORTH KEEPING</div>
-          <h1>Book Gems</h1>
-          <p>Ideas, arguments and possible book lines. Candidates are not confirmed positions and are not automatically inserted into the manuscript.</p>
+          <h1>Writing Gems</h1>
+          <p>Ideas, arguments and possible book or script lines. Candidates are not confirmed positions and are not automatically inserted into the manuscript.</p>
         </div>
         <button className="primary" onClick={() => setEdit(emptyGem())}>+ Add passage</button>
       </div>
@@ -101,7 +101,7 @@ export default function GemsView({
               notes:g.notes, origin:g.origin, source_label:g.source_label, status:g.status,
             })}>Review / edit</button>
             <button className="danger" onClick={() => {
-              if (!window.confirm("Remove this passage from Book Gems? It will be hidden, not erased from the database.")) return;
+              if (!window.confirm("Remove this passage from Writing Gems? It will be hidden, not erased from the database.")) return;
               void request("delete_gem", { project_id:project, id:g.id })
                 .then(() => setRefresh(n => n+1)).catch(e => onError(errorText(e)));
             }}>Remove</button>
@@ -129,7 +129,7 @@ export default function GemsView({
             } catch (error) { onError(errorText(error)); }
             finally { setSaving(false); }
           }}>
-          <div className="eyebrow">BOOK GEMS · YOUR BOOK, YOUR CHOICE</div>
+          <div className="eyebrow">WRITING GEMS · YOUR BOOK, YOUR CHOICE</div>
           <h2>{edit.id ? "Review a saved passage" : "Keep a passage"}</h2>
           <label>Text or reasoning
             <textarea required rows={6} value={edit.text} onChange={e => setEdit({ ...edit, text:e.target.value })}
