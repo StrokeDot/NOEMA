@@ -5,9 +5,21 @@ export interface SourceExcerpt {
   location: string;
   text: string;
 }
+export type ReasoningMode = "Within framework" | "Compare frameworks" | "Critical evaluation";
+export interface FrameworkContext {
+  id: string;
+  title: string;
+  perspective: "Author" | "External" | "Character" | "Custom";
+  principles: string;
+  qualifications: string;
+  source_label: string;
+}
 export interface AIRequest {
   question: string;
   projectId: string;
+  projectFormat: "Book" | "Video Script";
+  reasoningMode: ReasoningMode;
+  activeFrameworks: FrameworkContext[];
   instructions: string[];
   establishedPositions: string[];
   selectedManuscript: string;
@@ -30,4 +42,27 @@ export interface BookExporter {
     author: string;
     chapters: { title: string; html: string }[];
   }): Promise<Uint8Array>;
+}
+
+/**
+ * This is a future provider contract, not a connected AI feature.
+ * The author-selected standpoint must stay distinct from external perspectives.
+ * Within-frame reasoning evaluates logical implications; critical evaluation
+ * checks premises and factual claims against actual sources. Never mistake an
+ * imported perspective for a statement the author personally endorses.
+ */
+export function frameworkInstructions(request: Pick<AIRequest,
+  "projectFormat" | "reasoningMode" | "activeFrameworks">): string {
+  const scope = request.projectFormat === "Video Script"
+    ? "Draft spoken narration and clear script sections; visual cues are distinct from factual claims."
+    : "Draft book-ready prose and organize reasoning into chapters.";
+  const mode = request.reasoningMode === "Within framework"
+    ? "Reason provisionally from the selected premises, while flagging unsupported claims."
+    : request.reasoningMode === "Compare frameworks"
+      ? "Compare the selected frameworks fairly without assigning external beliefs to the author."
+      : "Critically test premises and conclusions against evidence; preserve the author's actual wording.";
+  const records = request.activeFrameworks.map(f =>
+    `Framework [${f.perspective}]: ${f.title}\nPremises: ${f.principles}\nQualifications: ${f.qualifications}`
+  ).join("\n\n");
+  return `${scope}\n${mode}\n\n${records}`;
 }
