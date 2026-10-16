@@ -10,8 +10,8 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
     .getByLabel("Book title", { exact: true })
     .fill("26 Reasons Why Jews Should Believe in Jesus");
   await page.getByLabel("Author", { exact: true }).fill("Alejandro Rosillon");
-  await page.getByRole("button", { name: "Create book project" }).click();
-  await expect(page.getByRole("dialog",{name:"New book project"})).toBeHidden();
+  await page.getByRole("button", { name: "Create writing project" }).click();
+  await expect(page.getByRole("dialog",{name:"New writing project"})).toBeHidden();
   await expect(
     page.getByText("Every book begins with a thought."),
   ).toBeVisible();
@@ -95,17 +95,29 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
     .fill("Mature freedom remains genuine freedom.");
   await page.getByRole("button", { name: "Save memory", exact: true }).click();
   await expect(page.locator(".memory-card")).toContainText("genuine freedom");
+  await page.getByRole("button", { name: "Core frameworks", exact: true }).click();
+  await page.getByRole("button", { name: "+ New framework" }).click();
+  await page.getByLabel("Title", { exact: true }).fill("Responsibility framework");
+  await page.getByLabel("Core principles / position document").fill("Individual moral responsibility belongs to the actor.");
+  await page.getByLabel("Qualifications, rejected interpretations, and boundaries")
+    .fill("This does not imply collective guilt.");
+  await page.getByLabel("Review status").selectOption("Confirmed");
+  await page.getByRole("button", { name: "Save framework" }).click();
+  await expect(page.locator(".gem-card")).toContainText("Responsibility framework");
+  await page.getByLabel("Use in this project").check();
+  await expect(page.getByText("1 confirmed framework active")).toBeVisible();
+  await page.getByRole("button", { name: "Project memory", exact: true }).click();
   await page.getByRole("button", { name: "Toggle theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "+ New book project" }).click();
+  await page.getByRole("button", { name: "+ New writing project" }).click();
   await page
     .getByLabel("Book title", { exact: true })
     .fill("Independent project");
   await page.getByLabel("Author", { exact: true }).fill("Another author");
-  await page.getByRole("button", { name: "Create book project" }).click();
-  await expect(page.getByRole("dialog",{name:"New book project"})).toBeHidden();
+  await page.getByRole("button", { name: "Create writing project" }).click();
+  await expect(page.getByRole("dialog",{name:"New writing project"})).toBeHidden();
   await page.getByLabel("Search research").fill("responsibility");
   await expect(page.getByText("0 passages on this page")).toBeVisible();
   await page
