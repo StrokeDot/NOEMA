@@ -448,7 +448,10 @@ impl Store {
                 let ids=a["ids"].as_array().ok_or("Expected ordered cue IDs")?;
                 let current=rows(&self.conn,"SELECT id FROM script_cues WHERE project_id=? AND deleted=0",params![pid])?;
                 let mut expected:Vec<String>=current.as_array().unwrap().iter().filter_map(|x|x["id"].as_str().map(str::to_string)).collect();
-                let mut incoming:Vec<String>=ids.iter().map(|x|x.as_str().ok_or("Invalid cue ID").map(str::to_string)).collect::<Result<Vec<_>>>()?;
+                let mut incoming:Vec<String>=Vec::with_capacity(ids.len());
+                for value in ids {
+                    incoming.push(value.as_str().ok_or("Invalid cue ID")?.to_string());
+                }
                 expected.sort();incoming.sort();
                 if incoming!=expected {return Err("Cue order must contain each active cue exactly once".into());}
                 let tx=self.conn.transaction()?;
