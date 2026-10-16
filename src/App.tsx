@@ -9,19 +9,21 @@ import Manuscript from "./Editor";
 import Research, { Search, SourceReader } from "./Research";
 import MemoryView from "./Memory";
 import GemsView from "./Gems";
+import FrameworksView from "./Frameworks";
 import type { GemDraft } from "./types";
 type View =
-  "Write" | "Research" | "Conversations" | "Memory" | "Gems" | "Preview" | "Settings";
+  "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Gems" | "Preview" | "Settings";
 const views: View[] = [
   "Write",
   "Research",
   "Conversations",
   "Memory",
+  "Frameworks",
   "Gems",
   "Preview",
   "Settings",
 ];
-const symbols = ["✎", "▤", "☷", "◇", "❖", "▥", "⚙"];
+const symbols = ["✎", "▤", "☷", "◇", "◈", "❖", "▥", "⚙"];
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
@@ -225,7 +227,7 @@ export default function App() {
               className="new-project"
               onClick={() => void action(async () => setNewProject(true))}
             >
-              + New book project
+              + New writing project
             </button>
           </div>
           <nav aria-label="Workspace">
@@ -241,8 +243,10 @@ export default function App() {
                   ? "Manuscript"
                   : v === "Memory"
                     ? "Project memory"
+                    : v === "Frameworks"
+                      ? "Core frameworks"
                     : v === "Gems"
-                      ? "Book gems"
+                      ? "Writing gems"
                     : v === "Preview"
                       ? "Book preview"
                       : v}
@@ -250,7 +254,7 @@ export default function App() {
             ))}
           </nav>
           <div className="chapter-heading">
-            <span className="eyebrow">CHAPTERS · {chapters.length}</span>
+            <span className="eyebrow">{project?.project_type === "Video Script" ? "SCRIPT SECTIONS" : "CHAPTERS"} · {chapters.length}</span>
             <button
               aria-label="Add chapter"
               disabled={!project || busy}
@@ -441,6 +445,8 @@ export default function App() {
                 project={project.id}
                 onError={report}
               />
+            ) : view === "Frameworks" ? (
+              <FrameworksView key={project.id} project={project.id} onError={report} />
             ) : view === "Gems" ? (
               <GemsView
                 project={project.id}
@@ -549,6 +555,7 @@ function ProjectForm({
 }) {
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
+  const [projectType, setProjectType] = useState<"Book" | "Video Script">("Book");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -558,7 +565,7 @@ function ProjectForm({
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label="New book project"
+        aria-label="New writing project"
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -566,6 +573,7 @@ function ProjectForm({
             await onCreate({
               title: title.trim(),
               author: author.trim(),
+              project_type: projectType,
               description,
             });
           } catch (err) {
@@ -577,20 +585,27 @@ function ProjectForm({
       >
         <div className="brand">NOEMA</div>
         <div className="eyebrow">WHERE THOUGHT BECOMES LEGACY</div>
-        <h1>Make room for your book.</h1>
+        <h1>Make room for your next project.</h1>
         <p>
-          A private home for your manuscript, your sources, and the ideas that
+          A private home for your books, scripts, sources, and the ideas that
           connect them.
         </p>
         <label>
-          Book title
+          Project format
+          <select value={projectType} onChange={e => setProjectType(e.target.value as "Book" | "Video Script")}>
+            <option value="Book">Book</option>
+            <option value="Video Script">Video script</option>
+          </select>
+        </label>
+        <label>
+          {projectType === "Book" ? "Book title" : "Video script title"}
           <input
             autoFocus
             required
             maxLength={500}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="The book only you can write"
+            placeholder={projectType === "Book" ? "The book only you can write" : "The story only you can tell"}
           />
         </label>
         <label>
@@ -625,7 +640,7 @@ function ProjectForm({
             className="primary"
             disabled={busy || !title.trim() || !author.trim()}
           >
-            {busy ? "Creating…" : "Create book project →"}
+            {busy ? "Creating…" : "Create writing project →"}
           </button>
         </div>
       </form>
@@ -727,6 +742,7 @@ function Settings({
   const [title, setTitle] = useState(project.title);
   const [author, setAuthor] = useState(project.author);
   const [description, setDescription] = useState(project.description);
+  const [projectType, setProjectType] = useState<"Book" | "Video Script">(project.project_type);
   const [path, setPath] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -749,10 +765,11 @@ function Settings({
               title,
               author,
               description,
+              project_type: projectType,
               settings: JSON.parse(project.settings),
             });
             await onUpdated();
-            setNote("Book details saved.");
+            setNote("Project details saved.");
           } catch (err) {
             onError(errorText(err));
           } finally {
@@ -760,9 +777,15 @@ function Settings({
           }
         }}
       >
-        <h2>Book details</h2>
+        <h2>Writing project details</h2>
+        <label>Project format
+          <select value={projectType} onChange={e => setProjectType(e.target.value as "Book" | "Video Script")}>
+            <option value="Book">Book</option>
+            <option value="Video Script">Video script</option>
+          </select>
+        </label>
         <label>
-          Book title
+          Project title
           <input
             required
             value={title}
@@ -785,7 +808,7 @@ function Settings({
           />
         </label>
         <button className="primary" disabled={busy}>
-          Save book details
+          Save project details
         </button>
       </form>
       <section>
