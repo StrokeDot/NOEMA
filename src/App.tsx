@@ -451,7 +451,7 @@ export default function App() {
               ) : (
                 <div className="empty-state">
                   <span className="large-symbol">✎</span>
-                  <h1>Every draft begins with a thought.</h1>
+                  <h1>{project.project_type === "Book" ? "Every book begins with a thought." : "Every script begins with a thought."}</h1>
                   <p>Create a section and give it room to grow.</p>
                   <button className="primary" onClick={addChapter}>
                     Create a chapter
