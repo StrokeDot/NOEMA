@@ -1,52 +1,75 @@
-# NOEMA 0.1 verification and handoff
+# NOEMA Windows verification and handoff
 
-Date: 15 October 2026.
+Verified 16 October 2026. This is a testable Windows prerelease, with a built NSIS
+installer and automated installed-application verification.
 
-This source package implements a working writing/research foundation. It is **not yet a verified Windows release**. Windows acceptance remains a required gate, not an assumed result.
+- Verified application commit: `cf900ae60a55ae404311fc6cd94d24b7b08c4862`
+- [Successful Windows workflow](https://github.com/StrokeDot/NOEMA/actions/runs/38858899633)
+- [Download installer artifact](https://github.com/StrokeDot/NOEMA/actions/runs/38858899633/artifacts/12028082487)
+- [Screenshots and native verification report](https://github.com/StrokeDot/NOEMA/actions/runs/38858899633/artifacts/12028451612)
+- [Installation and first-session instructions](INSTALL_WINDOWS.md)
+- [PDF diagnosis and repair details](WINDOWS_REPAIR.md)
 
-## Verified in the development environment
+## Results
 
 | Check | Result |
 |---|---|
-| Strict TypeScript check + Vite production build | Passed |
-| Rust storage/import core compilation | Passed |
-| Rust workflow tests | 12 passed |
-| Autosave coordinator tests | 3 passed |
-| Browser integration workflow against actual Rust/SQLite | 1 passed |
-| Desktop 1440 × 1000 and tablet-width 720 × 1000 layout inspection | Inspected; no horizontal overflow in the tablet test |
+| Strict TypeScript check and Vite production build | Passed locally and on Windows |
+| JavaScript autosave tests | 3 passed locally and on Windows |
+| Rust workflow/integration tests | 19 passed locally and on Windows |
+| Playwright browser workflows using real Rust/SQLite | 3 passed locally and on Windows |
+| Tauri release compilation and NSIS packaging | Passed on Windows |
+| Installation of generated NSIS package | Passed on Windows |
+| Installed executable loads embedded frontend without Vite | Passed on Windows |
+| Create book/chapter, save, close native window, relaunch and read text | Passed on Windows |
+| Create channel/video, save separate narration and visuals, close/relaunch | Passed on Windows |
+| Downloaded installer and evidence ZIP checksums | Matched GitHub upload digests |
 
-The browser scenario creates the example book and two chapters, applies bold formatting, verifies saved content after reload, switches chapters immediately after typing, reads both chapters in preview, imports a two-page PDF, retrieves a page-two passage, creates and edits a source-linked memory, persists the dark theme, creates a second book, verifies research/memory isolation, switches back, and checks the narrow layout. Native file selection is substituted with fixture paths; storage, import and search use the actual Rust core and on-disk SQLite.
+The native report records installation success, three application launches,
+embedded frontend assets, and successful book and script reopening. The screenshot
+shows the installed Video Script Studio. These are actual Windows tests, separate
+from the development-only browser bridge.
 
-The 12 core tests cover reopening a database, conflicting saves, revision snapshots, preserved original file bytes, project-scoped FTS search, memory CRUD, ChatGPT branch metadata, recognized/unrecognized JSON, invalid-file cleanup, text PDF page locations, scanned-PDF rejection, chapter reordering/soft deletion, consistent backup reopening, repeated migration, Unicode passage boundaries, and import/search/pagination of a 10,000-message archive.
+The browser workflows exercise rich text, immediate chapter switching, book
+preview, PDF import and page references, source-linked memory editing, confirmed
+framework activation, theme persistence, project isolation, video scene ordering,
+and an unobstructed writing workspace at 1024 × 768 and tablet widths.
 
-The autosave tests exercise coalescing, serialized slow writes with correct version progression, and recovery/retry after a failed write.
+The Rust suite covers durable SQLite reopening, conflict detection, revision
+snapshots, original imported bytes, project-scoped FTS search, conversation roles,
+branches and timestamps, invalid-import cleanup, PDF page extraction and specific
+OCR errors, PDF byte offsets, memory CRUD, chapter ordering/soft deletion, backup
+reopening, legacy migrations, retained manuscript text, Writing Gems, framework
+perspective/activation, channel grouping, separate video fields, and a searchable
+10,000-message archive. No existing tests were disabled.
 
-## Not verified here
+## Installer identity
 
-- Native Tauri compilation and launch: blocked by unavailable Linux GUI development libraries/pkg-config. Installing those packages was not permitted in this environment.
-- Windows compilation, NSIS installation, native file dialogs, actual Windows application close/reopen, and WebView2 behavior: no Windows host available.
-- Android compilation or installation.
-- Production-scale multi-gigabyte archive behavior, encrypted PDFs, complex PDF reading order, OCR, or long-session endurance testing.
+Extract `NOEMA_0.1.0_x64-setup.exe` from the installer artifact. It is 3,494,946 bytes.
 
-No Windows executable is included. `npm run tauri build` and the included Windows CI workflow are provided for the native verification gate. The frontend's roughly 695 KB minified JavaScript bundle produces Vite's advisory size warning; compilation succeeds. No external editor/font/CDN fetch is required at runtime.
+- Installer SHA-256: `2faf6f4a474f25eb1c415e8420bcfb6c46763e5125db63557d9dbf5cc9339803`
+- Artifact ZIP SHA-256: `caadc4efcfe6010a00bafdae3a4626d8aa1784257f70f1e8fd331faf559cabaa`
 
-## Required Windows acceptance checklist
+GitHub currently retains this Actions artifact until 14 January 2027. Repository
+access is required to download it; the repository remains private.
 
-1. Install prerequisites from README and run `npm ci`.
-2. Run `npm run check` and `npm run tauri build`; retain the logs.
-3. Install the generated NSIS installer and launch NOEMA.
-4. Create a book with title, author, and description.
-5. Add several chapters, rename/reorder one, and confirm a deletion.
-6. Enter formatted text; close immediately after the last edit. Relaunch and verify the final text.
-7. Import TXT, Markdown, ChatGPT JSON, and a text PDF through the native picker. Confirm originals are intact and malformed/scanned files report errors.
-8. Search a known passage, check its location, and open the source reader.
-9. Create/edit a memory note, link its source, and verify it after relaunch.
-10. Read the book preview; change themes; collapse/resize the research panel.
-11. Create a second book and confirm archives, chapters and memories remain separate.
-12. Create a backup, restore it into an isolated data directory, and verify all data and originals. Do not overwrite the only copy of a real book during this test.
+## Limits and remaining manual acceptance
 
-Until these checks pass on Windows, refer to the delivery as the **NOEMA 0.1 foundation source**, not a completed Windows release.
+- The installer is unsigned and may produce a Windows unknown-publisher warning.
+- Native file-picker interactions, all Windows display scales, complex PDF layouts,
+  encrypted PDFs, long writing sessions, and large real-world author archives have
+  not received exhaustive manual testing. Scanned PDFs require unsupported OCR.
+- Browser tests substitute fixture paths for native file selection; imports and
+  storage still use the real Rust implementation.
+- Native restart tests wait for the saved indicator before closing. An immediate
+  close during an unfinished save still merits manual acceptance testing.
+- The approximately 736 KB minified frontend bundle produces an advisory size
+  warning; the build succeeds and assets are included locally.
+- AI, Android delivery, EPUB/PDF publishing, and synchronization are not implemented.
+- No author database was used or modified in these tests. Migrations were unchanged;
+  migration and backup tests pass on synthetic legacy databases.
 
-## Next milestone
-
-First close the Windows acceptance gate. Then NOEMA 0.2: bounded retrieval, cited answers from imported conversations, selectable local/cloud provider adapters, cancellation, and author-approved memory promotion. Add larger archive benchmarks before increasing the per-file limit.
+Start with a small test book and video before importing valuable work. Exercise
+native imports, revisions, Writing Gems, and backups through the UI. Then prioritize
+NOEMA 0.2: bounded project retrieval and answers with direct source citations,
+provider-independent AI, and author-approved memory promotion.

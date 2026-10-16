@@ -128,7 +128,7 @@ Optional: `npm run format` and `cargo fmt --manifest-path crates/noema-core/Carg
 
 ## Known limits and next milestone
 
-- Native Windows compile/install/launch and WebView2 interactions must be verified before claiming Version 0.1 complete.
+- Windows compilation, installation, launch, and book/video reopening passed automated verification. Native file dialogs and long-session manual acceptance remain; see [verification report](docs/VERIFICATION.md).
 - Android packaging, touch selection behavior, sync, EPUB/PDF production, OCR, footnotes, illustrations and AI are not implemented.
 - Imports are limited to 256 MiB per file and parsed in memory. This is a deliberate bound, not a claim of unlimited archive size. Several documents can be imported sequentially. There is no cancellation or byte-progress UI yet.
 - PDF extraction quality varies with fonts, layouts and encodings. Image-only pages are reported; no OCR. A PDF with mixed image/text pages can be imported with a warning for blank extracted pages.
@@ -136,7 +136,7 @@ Optional: `npm run format` and `cargo fmt --manifest-path crates/noema-core/Carg
 - No automatic memory extraction: established positions are always authored manually.
 - The app has no encrypted vault; privacy relies on your local Windows account/disk protections.
 
-Immediate next gate: verify the included Windows workflow and perform the ten-step acceptance checklist in `docs/VERIFICATION.md`. Then **NOEMA 0.2**: project-grounded AI answers with direct citations to original passages, bounded retrieval, user-approved memory promotion, and provider choice.
+Next: evaluate the installed prerelease using [the first-session checklist](docs/INSTALL_WINDOWS.md). Then **NOEMA 0.2**: project-grounded AI answers with direct citations to original passages, bounded retrieval, user-approved memory promotion, and provider choice.
 
 ### Book Gems (0.1.x foundation)
 
@@ -193,3 +193,5 @@ marks all PDFs as binary. Do not regenerate or edit PDF fixtures with text tools
 Tests verify the xref/object offsets, extraction on both pages, byte-for-byte
 preservation of the imported original, and the specific no-text/OCR limitation.
 No PDF dependency or importer workaround was required.
+
+Verified installer: [download the Windows artifact](https://github.com/StrokeDot/NOEMA/actions/runs/38858899633/artifacts/12028082487). See [the full verification report](docs/VERIFICATION.md) for test scope, checksums, and limitations.
