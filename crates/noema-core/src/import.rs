@@ -51,6 +51,130 @@ fn chunk(text: &str, label: &str, out: &mut Vec<Passage>) {
         start = end - 160;
     }
 }
+use quick_xml::{escape::unescape, events::Event, Reader};
+use zip::ZipArchive;
+use std::io::Cursor;
+const MAX_XML_FILE: u64 = 12 * 1024 * 1024;
+const MAX_EXTRACTED_TEXT: usize = 16 * 1024 * 1024;
+fn zip_read(archive: &mut ZipArchive<Cursor<&[u8]>>, file: &str) -> Result<Option<Vec<u8>>> {
+    let mut entry = match archive.by_name(file) {
+        Ok(entry) => entry,
+        Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+        Err(e) => return Err(format!("Cannot read ebook archive: {e}").into()),
+    };
+    if entry.size() > MAX_XML_FILE { return Err("A book section exceeds the safe import limit".into()); }
+    let mut bytes=Vec::new();
+    entry.take(MAX_XML_FILE + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_XML_FILE {return Err("A book section expanded beyond the safe limit".into());}
+    Ok(Some(bytes))
+}
+fn clean_xml(bytes:&[u8], docx:bool)->Result<String> {
+    let mut reader=Reader::from_reader(bytes);
+    let mut output=String::new();
+    loop {
+        let event=reader.read_event().map_err(|e|format!("Cannot read XML document: {e}"))?;
+        match event {
+            Event::Text(t) => {
+                let value=reader.decoder().decode(t.as_ref())?;
+                let plain=unescape(&value).map_err(|e|format!("Malformed document text: {e}"))?;
+                output.push_str(&plain);
+            }
+            Event::CData(t) => output.push_str(&reader.decoder().decode(t.as_ref())?),
+            Event::Start(t)|Event::Empty(t) => {
+                let tag=t.name();
+                let n=tag.as_ref();
+                if (docx && (n==b"w:br" || n==b"w:cr")) || (!docx && n==b"br") {output.push('\n');}
+                if docx && n==b"w:tab" {output.push('\t');}
+            }
+            Event::End(t) => {
+                let n=t.name();
+                let n=n.as_ref();
+                if (docx && (n==b"w:p" || n==b"w:tr")) ||
+                   (!docx && [b"p".as_slice(),b"h1",b"h2",b"h3",b"h4",b"h5",b"h6",b"li",b"div",b"blockquote"].contains(&n))
+                {output.push_str("\n\n");}
+            }
+            Event::Eof => break,
+            _=>{}
+        }
+        if output.len()>MAX_EXTRACTED_TEXT{return Err("Extracted document exceeds the safe text limit".into());}
+    }
+    Ok(output)
+}
+fn xml_attrs(bytes:&[u8], tag:&[u8], attribute:&[u8])->Result<Vec<String>> {
+    let mut rdr=Reader::from_reader(bytes);
+    let mut vals=Vec::new();
+    loop {
+        match rdr.read_event().map_err(|e|format!("Invalid EPUB manifest: {e}"))? {
+            Event::Start(t)|Event::Empty(t) if t.name().as_ref()==tag => {
+                for a in t.attributes().flatten() {
+                    if a.key.as_ref()==attribute {
+                        vals.push(String::from_utf8(a.value.into_owned())?);
+                    }
+                }
+            }
+            Event::Eof=>break,
+            _=>{}
+        }
+    }
+    Ok(vals)
+}
+fn ep_path(base:&str,name:&str)->String {
+    let mut stack:Vec<&str>=base.split('/').filter(|x|!x.is_empty()).collect();
+    if !stack.is_empty(){stack.pop();}
+    for seg in name.split('/') {
+        if seg==".." {stack.pop();}
+        else if seg!="." && !seg.is_empty(){stack.push(seg);}
+    }
+    stack.join("/")
+}
+fn zipped_passages(bytes:&[u8], kind:&str, passages:&mut Vec<Passage>)->Result<String> {
+    let mut archive=ZipArchive::new(Cursor::new(bytes)).map_err(|_|"This Word/EPUB file is not a valid ZIP archive")?;
+    if kind=="docx" {
+        let text=zip_read(&mut archive,"word/document.xml")?.ok_or("Word file has no document.xml")?;
+        let plain=clean_xml(&text,true)?;
+        chunk(&plain,"Word document · original text",passages);
+        return Ok("Word document imported in reading order. Formatting, images, comments and original page numbers are not indexed.".into());
+    }
+    // EPUB container references the package file, whose spine determines the reading order.
+    let root=zip_read(&mut archive,"META-INF/container.xml")?
+        .ok_or("EPUB is missing META-INF/container.xml")?;
+    let package=xml_attrs(&root,b"rootfile",b"full-path")?.into_iter().next().ok_or("EPUB has no package document")?;
+    let opf=zip_read(&mut archive,&package)?.ok_or("EPUB package document not found")?;
+    let mut rdr=Reader::from_reader(opf.as_slice());
+    let mut resources=std::collections::HashMap::<String,String>::new();
+    let mut spine=Vec::<String>::new();
+    loop {
+        match rdr.read_event().map_err(|e|format!("Invalid EPUB structure: {e}"))? {
+            Event::Start(t)|Event::Empty(t) if t.name().as_ref()==b"item" => {
+                let mut id=None;let mut href=None;
+                for a in t.attributes().flatten() {
+                    let val=String::from_utf8(a.value.into_owned())?;
+                    if a.key.as_ref()==b"id"{id=Some(val);}
+                    else if a.key.as_ref()==b"href"{href=Some(val);}
+                }
+                if let (Some(k),Some(v))=(id,href){resources.insert(k,v);}
+            }
+            Event::Start(t)|Event::Empty(t) if t.name().as_ref()==b"itemref" => {
+                for a in t.attributes().flatten(){
+                    if a.key.as_ref()==b"idref"{spine.push(String::from_utf8(a.value.into_owned())?);}
+                }
+            }
+            Event::Eof => break,
+            _=>{}
+        }
+    }
+    if spine.is_empty(){return Err("EPUB reading order (spine) is missing".into());}
+    let mut chapter=0;
+    for item in spine {
+        let href=resources.get(&item).ok_or("EPUB chapter is missing from manifest")?;
+        let target=ep_path(&package,href.split('#').next().unwrap_or(href));
+        let page=zip_read(&mut archive,&target)?.ok_or("An EPUB spine chapter cannot be read")?;
+        let plain=clean_xml(&page,false)?;
+        chapter+=1;
+        chunk(&plain,&format!("EPUB section {chapter} · {target}"),passages);
+    }
+    Ok("DRM-free EPUB imported in reading order. Images, embedded media and page numbers are not indexed.".into())
+}
 pub fn prepare(root: &Path, path: &Path) -> Result<PreparedImport> {
     let meta = fs::metadata(path)?;
     if !meta.is_file() {
@@ -69,8 +193,8 @@ pub fn prepare(root: &Path, path: &Path) -> Result<PreparedImport> {
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !["txt", "md", "markdown", "json", "pdf"].contains(&kind.as_str()) {
-        return Err("Supported files: TXT, Markdown, JSON conversations and text-based PDF".into());
+    if !["txt", "md", "markdown", "json", "pdf", "docx", "epub"].contains(&kind.as_str()) {
+        return Err("Supported files: TXT, Markdown, JSON conversations, text-based PDF, Word DOCX, and DRM-free EPUB".into());
     }
     let source_id = id();
     let relative = format!("originals/{source_id}.{kind}");
@@ -120,6 +244,8 @@ pub fn prepare(root: &Path, path: &Path) -> Result<PreparedImport> {
             if blank > 0 {
                 p.warning=format!("{blank} page(s) had no extractable text. Image content is not indexed; OCR is not available.")
             }
+        } else if kind == "docx" || kind == "epub" {
+            p.warning=zipped_passages(&bytes,&kind,&mut p.passages)?;
         } else {
             let text = std::str::from_utf8(&bytes)
                 .map_err(|_| "This file is not UTF-8 text. Save it as UTF-8 and import it again.")?
