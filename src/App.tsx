@@ -141,7 +141,7 @@ export default function App() {
   }
   async function addChapter() {
     if (!project) return;
-    const title = prompt("Chapter title");
+    const title = prompt(project.project_type === "Video Script" ? "Script section title" : "Chapter title");
     if (!title?.trim()) return;
     await action(async () => {
       const added = await request<{ id: string }>("create_chapter", {
@@ -362,7 +362,7 @@ export default function App() {
             <span> / {view}</span>
           </div>
           <div className="top-actions">
-            {project && <button title="Save a passage to Book Gems" onClick={() => {
+            {project && <button title="Save a passage to Writing Gems" onClick={() => {
               const selected = window.getSelection()?.toString().trim() ?? "";
               setCaptureGem({
                 text: selected,
@@ -683,7 +683,7 @@ function Preview({
   return (
     <div className="preview-scroll">
       <div className="preview-controls">
-        <span className="eyebrow">READ-ONLY BOOK PREVIEW</span>
+        <span className="eyebrow">{project.project_type === "Video Script" ? "READ-ONLY VIDEO SCRIPT" : "READ-ONLY BOOK PREVIEW"}</span>
         <span>
           Chapters {chapters.length ? page * 5 + 1 : 0}–
           {Math.min(page * 5 + 5, chapters.length)} of {chapters.length}
@@ -703,7 +703,7 @@ function Preview({
         ) : (
           docs.map((d, i) => (
             <section className="preview-chapter" key={d.id}>
-              <div className="eyebrow">CHAPTER {page * 5 + i + 1}</div>
+              <div className="eyebrow">{project.project_type === "Video Script" ? "SECTION" : "CHAPTER"} {page * 5 + i + 1}</div>
               <h1>{d.title}</h1>
               <div
                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(d.html) }}
