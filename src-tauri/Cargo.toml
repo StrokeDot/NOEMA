@@ -1,6 +1,6 @@
 [package]
 name = "noema"
-version = "0.1.1"
+version = "0.1.2"
 description = "Where Thought Becomes Legacy"
 edition = "2021"
 [lib]
@@ -13,3 +13,10 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 noema-core = { path = "../crates/noema-core" }
 serde_json = "1"
+
+# Private GitHub Actions updater: no credentials are embedded in the binary.
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+semver = "1"
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }

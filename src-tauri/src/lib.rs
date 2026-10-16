@@ -1,3 +1,4 @@
+mod private_updates;
 use noema_core::Store;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -57,7 +58,14 @@ pub fn run() {
             app.manage(Arc::new(Mutex::new(store)));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![request, open_update_downloads])
+        .invoke_handler(tauri::generate_handler![
+            request, open_update_downloads,
+            private_updates::update_status,
+            private_updates::update_connect,
+            private_updates::update_disconnect,
+            private_updates::update_check,
+            private_updates::update_install,
+        ])
         .run(tauri::generate_context!())
         .expect("Unable to start NOEMA; check your data-folder permissions");
 }
