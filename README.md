@@ -177,8 +177,8 @@ The Windows Actions workflow runs the frontend build, JavaScript tests, Rust tes
 and browser integration tests before building the NSIS installer. It then silently
 installs the package on the disposable runner and uses WebView2 automation to create
 and reopen a book and video script in the installed application, without Vite.
-The automation-only debugging flag is supplied to the test processes; it is not
-part of the installed application configuration.
+An app-specific WebView2 debugging policy is temporarily set on the disposable
+runner and removed after testing. It is not part of the installed app configuration.
 
 A successful run provides **NOEMA-0.1-Windows-installer** (the installer ZIP) and
 **NOEMA-Windows-verification** (screenshots and a native smoke-test report).

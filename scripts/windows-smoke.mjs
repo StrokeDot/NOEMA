@@ -1,5 +1,6 @@
 // Runs only on an ephemeral Windows CI runner, against the installed release.
-// CDP is enabled for these child processes only, never in the shipped app config.
+// CDP is enabled by an app-specific policy on this disposable runner only.
+// The shipped application configuration does not enable remote debugging.
 import { chromium, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -12,6 +13,7 @@ const output = resolve('test-results');
 await mkdir(output, { recursive: true });
 const report = { installed: false, launches: 0, embeddedAssets: false, bookReopened: false, scriptReopened: false };
 let app, browser;
+let testPolicy = false;
 const pause = ms => new Promise(r => setTimeout(r, ms));
 async function run(command, args) {
   const child = spawn(command, args, { stdio: 'inherit' });
@@ -62,9 +64,11 @@ try {
   if (executables.length !== 1) throw new Error('Installer did not create noema.exe.');
   report.installed = true;
   const executable = join(installDir, executables[0]);
-  // WebView2 also supports an application-specific registry override. Some
-  // runtime versions ignore the environment value when the host supplies args.
-  await run('reg.exe', ['add', 'HKCU\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments', '/v', 'noema.exe', '/t', 'REG_SZ', '/d', '--remote-debugging-port=9222', '/f']);
+  // WebView2 150+ ignores environment and HKCU overrides for elevated hosts.
+  // Use the documented HKLM test policy on this disposable CI runner only.
+  // https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645
+  await run('reg.exe', ['add', 'HKLM\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments', '/v', 'noema.exe', '/t', 'REG_SZ', '/d', '--remote-debugging-port=9222', '/f']);
+  testPolicy = true;
   let page = await launch(executable);
   const modal = page.getByRole('dialog', { name: 'New writing project' });
   if (!(await modal.isVisible())) await page.getByRole('button', { name: '+ New writing project' }).click();
@@ -110,4 +114,5 @@ try {
   await writeFile(join(output, 'native-windows-smoke.json'), JSON.stringify(report, null, 2));
   if (app && app.exitCode === null) app.kill();
   await browser?.close().catch(() => {});
+  if (testPolicy) await run('reg.exe', ['delete', 'HKLM\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments', '/v', 'noema.exe', '/f']);
 }

@@ -43,7 +43,10 @@ the actual release NSIS package, launches the installed executable, checks that
 it loads the embedded frontend, creates a book chapter, closes the native window,
 relaunches and verifies the text, then repeats persistence checks for separate
 video narration and visual directions. It does not start a development server.
-Its WebView2 debugging flag applies only to the test child processes.
+Its app-specific WebView2 debugging policy exists only on the disposable runner
+and is removed after testing. WebView2 150+ ignores environment/HKCU debugging
+overrides for elevated hosts; this test uses the documented HKLM setting instead.
+See https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645.
 
 The workflow retains a JSON report and screenshot separately from the installer.
 A passing browser test alone is not reported as an installed Windows test.
