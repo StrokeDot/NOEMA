@@ -19,4 +19,4 @@ keyring = { version = "3", default-features = false, features = ["windows-native
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 semver = "1"
 sha2 = "0.10"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
