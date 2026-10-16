@@ -338,8 +338,70 @@ impl Store {
                 if affected == 0 { return Err("Gem not found in this book".into()); }
                 Ok(json!(true))
             }
+            "frameworks" => {
+                let pid = required(&a, "project_id")?;
+                rows(&self.conn,
+                    "SELECT f.*,COALESCE(pf.active,0) AS active FROM belief_frameworks f LEFT JOIN project_frameworks pf ON pf.framework_id=f.id AND pf.project_id=? WHERE f.deleted=0 ORDER BY f.updated_at DESC,f.id LIMIT 250",
+                    params![pid])
+            }
+            "save_framework" => {
+                let title = required(&a,"title")?.trim();
+                let principles = required(&a,"principles")?.trim();
+                let perspective = required(&a,"perspective")?;
+                let status = required(&a,"status")?;
+                if !["Author","External","Character","Custom"].contains(&perspective) {
+                    return Err("Invalid framework perspective".into());
+                }
+                if !["Draft","Confirmed"].contains(&status) {
+                    return Err("Invalid framework status".into());
+                }
+                if title.len() > 500 || principles.len() > 500_000 || string(&a,"qualifications").len() > 100_000 {
+                    return Err("Framework text exceeds storage limits".into());
+                }
+                let fid = a["id"].as_str().filter(|v|!v.is_empty());
+                let id = fid.map(str::to_string).unwrap_or_else(id);
+                let changed = if fid.is_some() {
+                    self.conn.execute(
+                        "UPDATE belief_frameworks SET title=?,perspective=?,principles=?,qualifications=?,status=?,updated_at=? WHERE id=? AND deleted=0",
+                        params![title,perspective,principles,string(&a,"qualifications"),status,now(),id])?
+                } else {
+                    self.conn.execute(
+                        "INSERT INTO belief_frameworks(id,title,perspective,principles,original_text,qualifications,source_label,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        params![id,title,perspective,principles,principles,string(&a,"qualifications"),string(&a,"source_label"),status,now(),now()])?
+                };
+                if changed != 1 { return Err("Framework not found".into()); }
+                Ok(json!({"id":id}))
+            }
+            "set_framework_active" => {
+                let project = required(&a,"project_id")?;
+                let framework = required(&a,"framework_id")?;
+                let active = a["active"].as_bool().ok_or("Missing active flag")?;
+                let confirmed: i64 = self.conn.query_row(
+                    "SELECT count(*) FROM belief_frameworks WHERE id=? AND deleted=0 AND status='Confirmed'",
+                    params![framework],|r|r.get(0))?;
+                if confirmed != 1 && active { return Err("Confirm the framework before activating it".into()); }
+                let affected = self.conn.execute(
+                    "INSERT INTO project_frameworks(project_id,framework_id,active) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM projects WHERE id=?) AND EXISTS(SELECT 1 FROM belief_frameworks WHERE id=? AND deleted=0) ON CONFLICT(project_id,framework_id) DO UPDATE SET active=excluded.active",
+                    params![project,framework,if active {1} else {0},project,framework])?;
+                if affected != 1 { return Err("Project or framework not found".into()); }
+                Ok(json!(true))
+            }
+            "framework_context" => {
+                rows(&self.conn,
+                    "SELECT f.id,f.title,f.perspective,f.principles,f.qualifications,f.source_label FROM project_frameworks pf JOIN belief_frameworks f ON f.id=pf.framework_id WHERE pf.project_id=? AND pf.active=1 AND f.status='Confirmed' AND f.deleted=0 ORDER BY f.title",
+                    params![required(&a,"project_id")?])
+            }
+            "archive_framework" => {
+                let fid=required(&a,"id")?;
+                let tx=self.conn.transaction()?;
+                let n=tx.execute("UPDATE belief_frameworks SET deleted=1,updated_at=? WHERE id=? AND deleted=0",params![now(),fid])?;
+                if n!=1 { return Err("Framework not found".into()); }
+                tx.execute("UPDATE project_frameworks SET active=0 WHERE framework_id=?",params![fid])?;
+                tx.commit()?;
+                Ok(json!(true))
+            }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":1}
+            "path":self.root.to_string_lossy(),"schema":3}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);
