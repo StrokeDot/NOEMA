@@ -18,6 +18,34 @@ const SERVICE: &str = "NOEMA-private-GitHub-updater";
 const USER: &str = "StrokeDot-NOEMA";
 const MAX_ZIP_BYTES: usize = 80 * 1024 * 1024;
 const MAX_INSTALLER_BYTES: u64 = 160 * 1024 * 1024;
+const GITHUB_API_MEDIA_TYPE: &str = "application/vnd.github+json";
+const GITHUB_API_VERSION: &str = "2022-11-28";
+fn artifact_download_request(client: &Client, token: &str, url: &str) -> reqwest::RequestBuilder {
+    // GitHub Actions /zip first responds with 302 to an expiring archive URL.
+    // octet-stream is NOT the supported Accept type for this REST endpoint.
+    // Reqwest follows the redirect; it strips bearer auth across hosts.
+    client.get(url)
+        .bearer_auth(token)
+        .header("Accept", GITHUB_API_MEDIA_TYPE)
+        .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn artifact_request_uses_github_api_media_type_without_post_content_type() {
+        let client=client().unwrap();
+        let req=artifact_download_request(&client,"secret-test-token",
+            "https://api.github.com/repos/StrokeDot/NOEMA/actions/artifacts/123/zip")
+            .build().unwrap();
+        assert_eq!(req.method(),reqwest::Method::GET);
+        assert_eq!(req.headers().get("accept").unwrap(),"application/vnd.github+json");
+        assert_eq!(req.headers().get("x-github-api-version").unwrap(),"2022-11-28");
+        assert!(!req.headers().contains_key("content-type"));
+        assert!(req.headers().contains_key("authorization"));
+    }
+}
+
 
 fn credential() -> Result<Entry, String> {
     Entry::new(SERVICE, USER).map_err(|_| "Windows credential storage unavailable.".into())
@@ -167,10 +195,14 @@ pub async fn update_install(
     }
     let id=info["artifact_id"].as_u64().ok_or("Missing artifact ID")?;
     let url=api(&format!("actions/artifacts/{id}/zip"));
-    let response=client.get(url).bearer_auth(token).header("Accept","application/octet-stream")
+    let response=artifact_download_request(&client, &token, &url)
         .timeout(Duration::from_secs(120)).send().await
         .map_err(|e|format!("Update download failed: {e}"))?;
-    if !response.status().is_success() {return Err(format!("GitHub download failed: HTTP {}",response.status()));}
+    if !response.status().is_success() {
+        // Report only host/status: redirected URLs may carry short-lived signed secrets.
+        return Err(format!("GitHub download failed: HTTP {} (host {}).",
+            response.status(),response.url().host_str().unwrap_or("unknown")));
+    }
     let bytes=response.bytes().await.map_err(|_|"Update download was interrupted.".to_string())?;
     if bytes.len()>MAX_ZIP_BYTES {return Err("Downloaded update is unexpectedly large.".into());}
     let expected=info["digest"].as_str().ok_or("Missing artifact digest")?

@@ -209,3 +209,9 @@ NOEMA retrieves selected confirmed author frameworks, established positions, rec
 **New imports:** Microsoft Word DOCX and DRM-free EPUB alongside PDF, TXT, Markdown and ChatGPT JSON exports. Export Google Docs as DOCX for import. Source originals remain saved separately from extracted text. EPUB media, DOCX tracked changes/comments and scanned PDF OCR are not supported yet. The source list now supports **Use as working draft** and **Create chapter** from an imported source. Protected ebooks and legacy binary DOC files cannot be imported.
 
 No API model or local LLM is automatically downloaded, and provider answers should be verified before use as evidence. There are no direct Google Docs edits, realtime voice calls, or multi-step autonomous editing agents in this version.
+
+## NOEMA 0.1.4 — GitHub updater media-type repair
+
+NOEMA 0.1.2–0.1.3 can discover newer builds but could fail to download the GitHub Actions archive with HTTP 415 (Unsupported Media Type). The updater now uses GitHub's documented `Accept: application/vnd.github+json` on the artifact archive API endpoint, follows its temporary redirect, verifies the SHA-256 artifact digest, then backs up all writing before staging the installer.
+
+**One-time manual installation required:** Existing builds contain the broken download request. Download and install 0.1.4 from the private GitHub Actions build after verification, directly over the existing version. From 0.1.4 onward, use NOEMA → Settings → NOEMA Updates for future releases. The first complete 0.1.4-to-next-version in-app update should be tested with a future release before calling that functionality end-to-end verified.
