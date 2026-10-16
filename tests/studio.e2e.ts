@@ -54,7 +54,7 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   await expect(page.locator(".preview-chapter").last()).toContainText(
     "maturation of freedom",
   );
-  await page.getByRole("button", { name: "Research", exact: true }).click();
+  await page.getByRole("button", { name: "Book sources", exact: true }).click();
   await page.evaluate(
     (files) => {
       (
@@ -64,7 +64,7 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
     [resolve("tests/fixtures/research.pdf")],
   );
   await page
-    .getByRole("button", { name: "+ Import files", exact: true })
+    .getByRole("button", { name: "+ Attach source files", exact: true })
     .click();
   await expect(
     page.getByText("1 file(s) imported.", { exact: true }),
