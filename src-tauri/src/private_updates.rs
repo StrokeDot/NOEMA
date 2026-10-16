@@ -79,7 +79,7 @@ async fn discover(client: &Client, token: &str, current: &str) -> Result<Option<
         for item in items {
             if item["workflow_run"]["id"].as_u64()!=Some(run_id) {continue;}
             let Some(ver)=metadata_version(current,item) else {continue;};
-            if best.as_ref().is_none_or(|(found,_)|ver>*found) {
+            if best.as_ref().is_none_or(|(found,_)|&ver>found) {
                 best=Some((ver,json!({
                     "available":true,"version":ver.to_string(),"installed":current,
                     "run_id":run_id,"artifact_id":item["id"],"digest":item["digest"],
@@ -139,8 +139,8 @@ fn archive_installer(content:&[u8], expected:&str) -> Result<Vec<u8>,String> {
     let cursor=std::io::Cursor::new(content);
     let mut archive=zip::ZipArchive::new(cursor).map_err(|_|"The update download is not a valid ZIP archive.".to_string())?;
     if archive.len()!=1 {return Err("Expected exactly one installer inside the signed-off GitHub artifact.".into());}
-    let mut entry=archive.by_index(0).map_err(|_|"Could not read the Windows installer.".to_string())?;
-    if entry.name()!=expected || entry.size()>MAX_INSTALLER_BYTES {
+    let entry=archive.by_index(0).map_err(|_|"Could not read the Windows installer.".to_string())?;
+    if entry.name().map_err(|_|"Invalid installer filename.".to_string())?.as_ref()!=expected || entry.size()>MAX_INSTALLER_BYTES {
         return Err("The artifact contains an unexpected installer or an oversized file.".into());
     }
     let mut bytes=Vec::new();
