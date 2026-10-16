@@ -2,7 +2,7 @@
 
 **Where Thought Becomes Legacy.**
 
-A local-first writing studio built with Tauri 2, React, TypeScript, Tiptap, Rust, and SQLite FTS5. Books and accumulated knowledge are the center of the application. No AI account, API key, cloud database, telemetry, or network service is required for ordinary use.
+A local-first writing studio built with Tauri 2, React, TypeScript, Tiptap, Rust, and SQLite FTS5. Books, video scripts, and accumulated knowledge are the center of the application. No AI account, API key, cloud database, telemetry, or network service is required for ordinary use. **AI model connections are not yet implemented.**
 
 ## Delivery status
 
@@ -42,7 +42,8 @@ A Windows GitHub Actions workflow is included. If you place this folder at the r
 
 ## What is implemented
 
-- Multiple independent books with title, author, description, and persistent project settings.
+- Multiple independent **Book** and **Video Script** writing projects with title, author, description, and persistent project settings.
+- **Core Frameworks** workspace: create or import text documents (TXT/MD/JSON), preserve original wording, label author vs. external perspectives, explicitly confirm, and activate reusable frameworks for selected projects.
 - Create, rename, reorder, and soft-delete chapters. Chapter headings provide sections inside a chapter.
 - Tiptap rich text: paragraphs, headings, bold, italic, underline, lists, blockquotes, undo/redo, word count, and focus mode.
 - Debounced autosave, serialized writes, optimistic conflict detection, normal-close save flushing, and recoverable revision history.
@@ -57,14 +58,16 @@ A Windows GitHub Actions workflow is included. If you place this folder at the r
 
 ## First session
 
-1. Create a book. For example, **26 Reasons Why Jews Should Believe in Jesus**, author Alejandro Rosillon. No book is forced into the application.
+1. Create a Book or Video Script project. For example, **26 Reasons Why Jews Should Believe in Jesus**, author Alejandro Rosillon. No book is forced into the application.
 2. Add chapters with the + button. Use heading formatting for sections.
 3. Write, wait for **Saved on this computer**, and reopen the application to verify your local setup.
 4. In Research, choose **Import files**. ChatGPT ZIP exports must first be extracted; select `conversations.json`.
 5. Search the right panel. Clicking a result opens the source's corresponding passage page.
 6. Add a Project Memory entry and, if useful, link it to a source.
 7. Open Book Preview to read chapters together.
-8. Use Settings → Create complete backup periodically.
+8. In **Core Frameworks**, add or import an author belief document, review it, mark it Confirmed, and check **Use in this project**. Other projects are unaffected unless you activate it there as well.
+9. For video scripts, sections use the same rich-text editor as book chapters. A specialized narration/B-roll/timing editor is planned, not implemented.
+10. Use Settings → Create complete backup periodically.
 
 ## Data and durability
 
@@ -77,7 +80,7 @@ noema.sqlite3-shm   SQLite shared-memory file while active
 originals/         immutable copies of imported files
 ```
 
-SQLite uses foreign keys, WAL journaling, `synchronous=FULL`, atomic transactions, and schema version 1 migrations. Newer unknown schema versions are rejected rather than overwritten. Revision snapshots capture the previous draft at most once a minute; restoring creates an additional snapshot of the current draft. Revisions are not automatically purged. Deleted chapters remain in SQLite; a graphical trash/recovery screen is not yet implemented.
+SQLite uses foreign keys, WAL journaling, `synchronous=FULL`, atomic transactions, and additive schema migrations through version 3. Newer unknown schema versions are rejected rather than overwritten. Revision snapshots capture the previous draft at most once a minute; restoring creates an additional snapshot of the current draft. Revisions are not automatically purged. Deleted chapters remain in SQLite; a graphical trash/recovery screen is not yet implemented.
 
 The 400 ms autosave debounce means an abrupt OS/process crash can lose the latest unsaved keystrokes. Normal chapter switching and normal window close flush pending writes. Errors remain visible; failed writes remain in editor memory for retry. No local app can guarantee recovery after disk loss: use backups.
 
@@ -140,3 +143,11 @@ Immediate next gate: verify the included Windows workflow and perform the ten-st
 NOEMA now includes a **Book Gems** workspace for candidate quotations, reasoning, arguments, and draft passages, grouped by chapter. Highlight text and use **Save passage** in the top toolbar, or open Book Gems to type/paste a passage. Each entry has attribution and source notes, status (Candidate / Approved / Used), and an editable version that keeps the original capture intact. These items are separate from established project memory and never modify manuscript text automatically.
 
 Microphone capture, voice commands, assistant response capture, and objection repetition tracking are planned integrations, **not yet available**. See `docs/BOOK_GEMS_AND_ARGUMENT_LEDGER.md` for their specification.
+
+## Author-selected reasoning frameworks and script format
+
+NOEMA now distinguishes **Book** from **Video Script** projects. Both use the same durable writing/archive tools; script-specific production views (voiceover, shot lists, visuals and timing) are future milestones.
+
+The **Core Frameworks** library is shared locally across writing projects but **not automatically activated** across them. Frameworks may belong to the Author or represent External, Character, or Custom standpoints. Imported text is initially **Draft**. You must review and confirm it before enabling it for a project. The original text is retained separately from later edits. Confirming a framework means the transcription represents that perspective, not that the claims have been proven.
+
+Future model integration will support three reasoning modes: **Within framework**, **Compare frameworks**, and **Critical evaluation**. The database already exposes only confirmed and active frameworks to the planned AI context contract; NOEMA does not currently send them to any AI service. See [Script and framework specification](docs/SCRIPTS_AND_FRAMEWORKS.md) and [Author memory requirements](docs/AUTHOR_MEMORY_CONTRACT.md).
