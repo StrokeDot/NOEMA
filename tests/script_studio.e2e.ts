@@ -4,6 +4,7 @@ test("video script scenes keep narration, visuals and timing after reopening", a
   const errors:string[] = [];
   page.on("pageerror", e=>errors.push(e.message));
   await page.goto("/");
+  await expect(page.getByRole("button", { name: "+ New writing project" })).toBeVisible();
   const modal=page.getByRole("dialog",{name:"New writing project"});
   if (!(await modal.isVisible())) await page.getByRole("button",{name:"+ New writing project"}).click();
   await modal.getByLabel("Project format").selectOption("Video Script");
@@ -26,6 +27,8 @@ test("video script scenes keep narration, visuals and timing after reopening", a
   await page.getByRole("button",{name:"+ Add scene"}).click();
   await page.getByLabel("Scene / segment title").fill("Closing");
   await page.getByLabel("Narration / voiceover").fill("He chose another ending.");
+  await page.getByRole("button",{name:"↑ Move up",exact:true}).click();
+  await expect(page.locator(".script-scene").first()).toContainText("Closing");
   await page.getByRole("button",{name:"Production preview"}).click();
   await expect(page.getByRole("dialog",{name:"Production script preview"})).toContainText("Redemption begins with a choice.");
   await expect(page.getByRole("dialog",{name:"Production script preview"})).toContainText("Wide shot of Arthur");
@@ -33,7 +36,8 @@ test("video script scenes keep narration, visuals and timing after reopening", a
   await page.getByRole("dialog",{name:"Production script preview"}).getByRole("button",{name:"Close"}).click();
   await page.reload();
   await expect(page.locator(".script-scene")).toHaveCount(2);
-  await page.locator(".script-scene").first().click();
+  await expect(page.locator(".script-scene").first()).toContainText("Closing");
+  await page.locator(".script-scene").filter({hasText:"Opening hook"}).click();
   await expect(page.getByLabel("Narration / voiceover")).toHaveValue("Redemption begins with a choice.");
   await expect(page.getByLabel("Footage and visual directions")).toHaveValue("Wide shot of Arthur near the bench.");
   await expect(page.getByLabel("Planned duration (seconds)")).toHaveValue("42");

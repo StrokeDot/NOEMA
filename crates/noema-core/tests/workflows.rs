@@ -202,7 +202,14 @@ fn pdf_pages_and_scanned_pdf_rejection() {
     let mut s = Store::open(d.path()).unwrap();
     let p = project(&mut s, "Book");
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/research.pdf");
-    import(&mut s, &p, &fixture);
+    let imported = import(&mut s, &p, &fixture);
+    let original_path: String = s.conn.query_row(
+        "SELECT original_path FROM sources WHERE id=?",
+        [imported["id"].as_str().unwrap()], |r| r.get(0)
+    ).unwrap();
+    assert_eq!(fs::read(s.root.join(original_path)).unwrap(), fs::read(&fixture).unwrap());
+    let first = call(&mut s, "search", json!({"project_id":p,"query":"redemption"}));
+    assert!(first[0]["location"].as_str().unwrap().starts_with("Page 1"));
     let hits = call(
         &mut s,
         "search",
@@ -210,7 +217,12 @@ fn pdf_pages_and_scanned_pdf_rejection() {
     );
     assert!(hits[0]["location"].as_str().unwrap().starts_with("Page 2"));
     let scan = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/scanned.pdf");
-    assert!(prepare(&s.root, &scan).is_err());
+    let error = match prepare(&s.root, &scan) {
+        Ok(_) => panic!("Text extraction must not report success for a page with no text"),
+        Err(e) => e.to_string(),
+    };
+    assert!(error.contains("No readable text found"), "Unexpected parse error: {error}");
+    assert!(error.contains("OCR"));
 }
 #[test]
 fn reorder_validate_and_soft_delete() {
@@ -538,4 +550,33 @@ fn video_cues_preserve_separate_narration_visuals_sources_and_revisions() {
     assert_eq!(call(&mut reopened,"script_cues",json!({"project_id":script})).as_array().unwrap().len(),1);
     let retained:i64=reopened.conn.query_row("SELECT count(*) FROM script_cues WHERE id=?",[cid],|r|r.get(0)).unwrap();
     assert_eq!(retained,1);
+}
+
+// Check the PDF byte-level invariants, not just whether a forgiving parser can
+// recover damaged files. This catches Windows newline conversion at checkout.
+#[test]
+fn pdf_fixture_xref_offsets_survive_checkout() {
+    for name in ["research.pdf", "scanned.pdf"] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures").join(name);
+        let bytes = fs::read(path).unwrap();
+        let marker = b"startxref";
+        let start = bytes.windows(marker.len()).rposition(|w| w == marker).unwrap();
+        let trailer = std::str::from_utf8(&bytes[start + marker.len()..]).unwrap();
+        let xref: usize = trailer.split_whitespace().next().unwrap().parse().unwrap();
+        assert_eq!(bytes.get(xref..xref + 4), Some(b"xref".as_slice()),
+            "{name}: startxref no longer points to xref. Check .gitattributes and core.autocrlf.");
+        let table = std::str::from_utf8(&bytes[xref..]).unwrap();
+        let mut lines = table.lines();
+        assert_eq!(lines.next(), Some("xref"));
+        let header: Vec<usize> = lines.next().unwrap().split_whitespace().map(|x| x.parse().unwrap()).collect();
+        for (index, line) in lines.take(header[1]).enumerate() {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if fields[2] == "n" {
+                let offset: usize = fields[0].parse().unwrap();
+                let object = format!("{} {} obj", header[0] + index, fields[1].parse::<usize>().unwrap());
+                assert!(bytes[offset..].starts_with(object.as_bytes()), "{name}: wrong object offset {offset}");
+            }
+        }
+        assert!(trailer.trim_end().ends_with("%%EOF"));
+    }
 }

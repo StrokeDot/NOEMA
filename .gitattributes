@@ -1,0 +1,3 @@
+# PDFs contain absolute byte offsets and stream lengths. Even an uncompressed,
+# mostly-ASCII PDF is binary: Windows core.autocrlf must never rewrite its bytes.
+*.pdf binary

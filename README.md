@@ -146,7 +146,7 @@ Microphone capture, voice commands, assistant response capture, and objection re
 
 ## Author-selected reasoning frameworks and script format
 
-NOEMA now distinguishes **Book** from **Video Script** projects. Both use the same durable writing/archive tools; script-specific production views (voiceover, shot lists, visuals and timing) are future milestones.
+NOEMA now distinguishes **Book** from **Video Script** projects. Both use the same durable writing/archive tools. Video Script Studio provides the separate narration, visuals, citations, and timing fields described below.
 
 The **Core Frameworks** library is shared locally across writing projects but **not automatically activated** across them. Frameworks may belong to the Author or represent External, Character, or Custom standpoints. Imported text is initially **Draft**. You must review and confirm it before enabling it for a project. The original text is retained separately from later edits. Confirming a framework means the transcription represents that perspective, not that the claims have been proven.
 
@@ -170,3 +170,26 @@ Video Script projects now open in **Video script studio**. Create and arrange sc
 The original **Manuscript** view remains available for older freeform drafts. Existing books, script sections, channel profiles, and research are not replaced by the new cue editor. An uploaded research file must belong to the same project to be linked directly.
 
 This is a writing/production planning system, **not** a video rendering or timeline editor. There is no connected AI model, live voice assistant, Filmora integration, or automatic media footage import yet. See [Script Studio specification](docs/VIDEO_SCRIPT_STUDIO.md).
+
+## Windows installer verification
+
+The Windows Actions workflow runs the frontend build, JavaScript tests, Rust tests,
+and browser integration tests before building the NSIS installer. It then silently
+installs the package on the disposable runner and uses WebView2 automation to create
+and reopen a book and video script in the installed application, without Vite.
+The automation-only debugging flag is supplied to the test processes; it is not
+part of the installed application configuration.
+
+A successful run provides **NOEMA-0.1-Windows-installer** (the installer ZIP) and
+**NOEMA-Windows-verification** (screenshots and a native smoke-test report).
+Download and extract the installer artifact, then run its `.exe`. The current
+prerelease is unsigned. No programming tools are needed to use the installed app.
+
+### PDF checkout regression
+
+The original PDF fixtures were valid, but Git's Windows newline conversion treated
+the mostly-ASCII PDFs as text and changed their byte offsets. `.gitattributes` now
+marks all PDFs as binary. Do not regenerate or edit PDF fixtures with text tools.
+Tests verify the xref/object offsets, extraction on both pages, byte-for-byte
+preservation of the imported original, and the specific no-text/OCR limitation.
+No PDF dependency or importer workaround was required.

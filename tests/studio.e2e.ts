@@ -6,6 +6,9 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
+  await expect(page.getByRole("button", { name: "+ New writing project" })).toBeVisible();
+  const modal = page.getByRole("dialog", { name: "New writing project" });
+  if (!(await modal.isVisible())) await page.getByRole("button", { name: "+ New writing project" }).click();
   await page
     .getByLabel("Book title", { exact: true })
     .fill("26 Reasons Why Jews Should Believe in Jesus");
@@ -104,7 +107,9 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   await page.getByLabel("Review status").selectOption("Confirmed");
   await page.getByRole("button", { name: "Save framework" }).click();
   await expect(page.locator(".gem-card")).toContainText("Responsibility framework");
-  await page.getByLabel("Use in this project").check();
+  // Activation is persisted asynchronously before the controlled checkbox updates.
+  await page.getByLabel("Use in this project").click();
+  await expect(page.getByLabel("Use in this project")).toBeChecked();
   await expect(page.getByText("1 confirmed framework active")).toBeVisible();
   await page.getByRole("button", { name: "Project memory", exact: true }).click();
   await page.getByRole("button", { name: "Toggle theme" }).click();
