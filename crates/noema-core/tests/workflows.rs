@@ -410,6 +410,9 @@ fn scripts_and_reusable_frameworks_respect_project_activation() {
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})).as_array().unwrap().len(),2);
     call(&mut reopened,"archive_framework",json!({"id":draft}));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})).as_array().unwrap().len(),1);
+    call(&mut reopened,"save_framework",json!({"id":external,"title":"Another thinker",
+        "perspective":"External","principles":"Different premises","status":"Draft"}));
+    assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})),json!([]));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":book})),json!([]));
     assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),3);
 }
