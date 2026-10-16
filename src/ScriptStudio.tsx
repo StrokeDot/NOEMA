@@ -259,8 +259,11 @@ export default function ScriptStudio({
     const target=index+delta;
     if(target<0||target>=cues.length)return;
     void withFlush(async()=>{
-      const next=[...cues];
-      [next[index],next[target]]=[next[target],next[index]];
+      const latest=await request<ScriptCue[]>("script_cues",{project_id:project.id});
+      const next=[...latest];
+      const actual=next.findIndex(c=>c.id===selected.id);
+      if(actual<0||actual+delta<0||actual+delta>=next.length)return;
+      [next[actual],next[actual+delta]]=[next[actual+delta],next[actual]];
       await request("reorder_script_cues",{project_id:project.id,ids:next.map(c=>c.id)});
       setCues(next.map((c,i)=>({...c,position:i})));
     });
@@ -274,11 +277,13 @@ export default function ScriptStudio({
       </div>
       <div className="framework-actions">
         <button disabled={busy||!cues.length} onClick={()=>void withFlush(async()=>{
-          const content=cues.map((c,i)=>`${i+1}. ${c.heading}\n\n${c.narration}`).join("\n\n");
+          const latest=await request<ScriptCue[]>("script_cues",{project_id:project.id});
+          const content=latest.map((c,i)=>`${i+1}. ${c.heading}\n\n${c.narration}`).join("\n\n");
           await navigator.clipboard.writeText(content);
         })}>Copy full narration</button>
         <button disabled={busy||!cues.length} onClick={()=>void withFlush(async()=>{
-          const content=cues.map((c,i)=>[
+          const latest=await request<ScriptCue[]>("script_cues",{project_id:project.id});
+          const content=latest.map((c,i)=>[
             `## ${i+1}. ${c.heading}`,
             `**Narration**\n${c.narration}`,
             `**Visuals / footage**\n${c.visuals}`,
@@ -287,7 +292,10 @@ export default function ScriptStudio({
           ].join("\n\n")).join("\n\n---\n\n");
           await navigator.clipboard.writeText(`# ${project.title}\n\n${content}`);
         })}>Copy production script</button>
-        <button onClick={()=>void withFlush(async()=>setPreview(true))} disabled={busy||!cues.length}>Production preview</button>
+        <button onClick={()=>void withFlush(async()=>{
+          setCues(await request<ScriptCue[]>("script_cues",{project_id:project.id}));
+          setPreview(true);
+        })} disabled={busy||!cues.length}>Production preview</button>
         <button className="primary" onClick={add} disabled={busy}>+ Add scene</button>
       </div>
     </div>
