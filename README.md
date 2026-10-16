@@ -162,3 +162,11 @@ The **Compare existing scripts** panel searches passages from other script proje
 
 **Important:** The AI conversation/model integration is still future work. The database can return confirmed channel profiles and explicitly selected cross-channel script references, but NOEMA does not yet send them to an AI or reason over them automatically. Existing online YouTube videos and ChatGPT conversations are not automatically imported. See [Channel Script Library](docs/CHANNEL_SCRIPT_LIBRARY.md).
 
+
+## Dedicated video script studio (production cues)
+
+Video Script projects now open in **Video script studio**. Create and arrange scenes; each scene has separate **Narration / voiceover**, **Footage / visual directions**, **evidence/source references**, optional planned duration, and Draft/Ready/Recorded status. These fields auto-save locally with revision history. Use **Production preview** to review an ordered, side-by-side narration/visual script before recording.
+
+The original **Manuscript** view remains available for older freeform drafts. Existing books, script sections, channel profiles, and research are not replaced by the new cue editor. An uploaded research file must belong to the same project to be linked directly.
+
+This is a writing/production planning system, **not** a video rendering or timeline editor. There is no connected AI model, live voice assistant, Filmora integration, or automatic media footage import yet. See [Script Studio specification](docs/VIDEO_SCRIPT_STUDIO.md).
