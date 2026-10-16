@@ -34,13 +34,11 @@ function CueEditor({
   const [sourceFilter,setSourceFilter]=useState("");
   const [matches,setMatches]=useState<Source[]>(sources);
   const save=useRef<Autosave<ScriptCueDraft>|null>(null);
-  const currentVersion=useRef(cue.version);
   if(!save.current) {
     save.current=new Autosave<ScriptCueDraft>(cue.version,async (fields,version)=>{
       const updated=await request<{version:number}>("save_script_cue",{
         ...fields,project_id:project,id:cue.id,version,
       });
-      currentVersion.current=updated.version;
       onPersist({...cue,...fields,version:updated.version,updated_at:Date.now()});
       return updated;
     },setStatus);

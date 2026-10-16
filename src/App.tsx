@@ -6,6 +6,7 @@ import DOMPurify from "dompurify";
 import { request, errorText } from "./api";
 import type { Project, Chapter, Document, Source } from "./types";
 import Manuscript from "./Editor";
+import ScriptStudio from "./ScriptStudio";
 import Research, { Search, SourceReader } from "./Research";
 import MemoryView from "./Memory";
 import GemsView from "./Gems";
@@ -14,8 +15,9 @@ import ChannelsView from "./Channels";
 import type { ChannelProfile } from "./types";
 import type { GemDraft } from "./types";
 type View =
-  "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings";
+  "Script Studio" | "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings";
 const views: View[] = [
+  "Script Studio",
   "Write",
   "Research",
   "Conversations",
@@ -26,7 +28,7 @@ const views: View[] = [
   "Preview",
   "Settings",
 ];
-const symbols = ["✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "⚙"];
+const symbols = ["▦", "✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "⚙"];
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [channels, setChannels] = useState<ChannelProfile[]>([]);
@@ -64,7 +66,7 @@ export default function App() {
     setProject(p);
     setChapters(cs);
     setDoc(first);
-    setView("Write");
+    setView(p.project_type === "Video Script" ? "Script Studio" : "Write");
     setSource(null);
     localStorage.setItem("noema-last-project", p.id);
   }, []);
@@ -243,15 +245,17 @@ export default function App() {
             </button>
           </div>
           <nav aria-label="Workspace">
-            {views.map((v, i) => (
+            {views.filter(v => v !== "Script Studio" || project?.project_type === "Video Script").map((v) => (
               <button
                 key={v}
                 className={view === v ? "selected" : ""}
                 onClick={() => changeView(v)}
                 disabled={!project || busy}
               >
-                <span aria-hidden="true">{symbols[i]}</span>
-                {v === "Write"
+                <span aria-hidden="true">{symbols[views.indexOf(v)]}</span>
+                {v === "Script Studio"
+                  ? "Video script studio"
+                  : v === "Write"
                   ? "Manuscript"
                   : v === "Memory"
                     ? "Project memory"
@@ -262,7 +266,7 @@ export default function App() {
                     : v === "Gems"
                       ? "Writing gems"
                     : v === "Preview"
-                      ? "Book preview"
+                      ? (project?.project_type === "Video Script" ? "Freeform preview" : "Book preview")
                       : v}
               </button>
             ))}
@@ -423,9 +427,18 @@ export default function App() {
                   computer.
                 </p>
                 <button className="primary" onClick={() => setNewProject(true)}>
-                  Create your first book
+                  Create your first writing project
                 </button>
               </div>
+            ) : view === "Script Studio" ? (
+              <ScriptStudio
+                key={project.id}
+                project={project}
+                channelName={channels.find(c=>c.id===project.channel_id)?.name}
+                onFlush={registerFlush}
+                onError={report}
+                onOpenSource={setSource}
+              />
             ) : view === "Write" ? (
               doc ? (
                 <Manuscript
@@ -438,8 +451,8 @@ export default function App() {
               ) : (
                 <div className="empty-state">
                   <span className="large-symbol">✎</span>
-                  <h1>Every book begins with a thought.</h1>
-                  <p>Create a chapter and give it room to grow.</p>
+                  <h1>Every draft begins with a thought.</h1>
+                  <p>Create a section and give it room to grow.</p>
                   <button className="primary" onClick={addChapter}>
                     Create a chapter
                   </button>
