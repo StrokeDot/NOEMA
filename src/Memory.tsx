@@ -8,9 +8,11 @@ const blank = {
   source_id: null as string | null,
 };
 export default function MemoryView({
+  script = false,
   project,
   onError,
 }: {
+  script?: boolean;
   project: string;
   onError: (s: string) => void;
 }) {
@@ -69,7 +71,7 @@ export default function MemoryView({
       <div className="view-heading">
         <div>
           <div className="eyebrow">THE THREAD OF YOUR THINKING</div>
-          <h1>Project memory</h1>
+          <h1>{script ? "Script memory" : "Project memory"}</h1>
           <p>What you believe. What you question. How you want to write.</p>
         </div>
         <button className="primary" onClick={() => setEdit({ ...blank })}>

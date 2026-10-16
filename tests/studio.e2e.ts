@@ -9,6 +9,7 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   await expect(page.getByRole("button", { name: "+ New writing project" })).toBeVisible();
   const modal = page.getByRole("dialog", { name: "New writing project" });
   if (!(await modal.isVisible())) await page.getByRole("button", { name: "+ New writing project" }).click();
+  await page.getByRole("button", { name: "Book project", exact: false }).click();
   await page
     .getByLabel("Book title", { exact: true })
     .fill("26 Reasons Why Jews Should Believe in Jesus");
@@ -117,6 +118,7 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByRole("button", { name: "+ New writing project" }).click();
+  await page.getByRole("button", { name: "Book project", exact: false }).click();
   await page
     .getByLabel("Book title", { exact: true })
     .fill("Independent project");
@@ -164,6 +166,7 @@ test("a narrow window opens with an unobstructed writing workspace", async ({ pa
   await expect(page.getByRole("button", { name: "+ New writing project" })).toBeVisible();
   const modal = page.getByRole("dialog", { name: "New writing project" });
   if (!(await modal.isVisible())) await page.getByRole("button", { name: "+ New writing project" }).click();
+  await modal.getByRole("button", { name: "Book project", exact: false }).click();
   await modal.getByLabel("Book title", { exact: true }).fill("Small-window book");
   await modal.getByLabel("Author", { exact: true }).fill("Author");
   await modal.getByRole("button", { name: "Create writing project" }).click();

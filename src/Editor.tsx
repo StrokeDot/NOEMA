@@ -7,11 +7,13 @@ import { Autosave } from "./autosave";
 import { request, errorText } from "./api";
 import type { Document, Revision } from "./types";
 export default function Manuscript({
+  script = false,
   doc,
   onFlush,
   onError,
   disabled,
 }: {
+  script?: boolean;
   disabled: boolean;
   doc: Document;
   onFlush: (fn: () => Promise<void>) => void;
@@ -43,7 +45,7 @@ export default function Manuscript({
     ],
     content: doc.html,
     editorProps: {
-      attributes: { "aria-label": "Chapter manuscript", spellcheck: "true" },
+      attributes: { "aria-label": script ? "Freeform script draft" : "Chapter manuscript", spellcheck: "true" },
     },
     onUpdate: ({ editor }) => {
       const text = editor.getText();
@@ -78,7 +80,7 @@ export default function Manuscript({
       onError(errorText(e));
     }
   }
-  if (!editor) return <p>Opening manuscript…</p>;
+  if (!editor) return <p>Opening draft…</p>;
   const buttons: [string, () => void, boolean][] = [
     [
       "Bold",
@@ -155,7 +157,7 @@ export default function Manuscript({
       </div>
       <div className="paper-scroll">
         <article className="paper">
-          <div className="eyebrow">THE MANUSCRIPT</div>
+          <div className="eyebrow">{script ? "FREEFORM SCRIPT DRAFT" : "THE MANUSCRIPT"}</div>
           <h1>{doc.title}</h1>
           <EditorContent editor={editor} />
         </article>

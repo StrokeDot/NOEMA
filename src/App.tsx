@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
 import DOMPurify from "dompurify";
@@ -41,6 +41,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [newProject, setNewProject] = useState(false);
+  const [newProjectType, setNewProjectType] = useState<Project["project_type"] | null>(null);
   const [nav, setNav] = useState(false);
   const [research, setResearch] = useState(
     () => window.matchMedia("(min-width: 1051px)").matches,
@@ -70,6 +71,7 @@ export default function App() {
     setDoc(first);
     setView(p.project_type === "Video Script" ? "Script Studio" : "Write");
     setSource(null);
+    setCaptureGem(null);
     localStorage.setItem("noema-last-project", p.id);
   }, []);
   useEffect(() => {
@@ -205,6 +207,26 @@ export default function App() {
       setChapters(next);
     });
   }
+  const isScript = project?.project_type === "Video Script";
+  const workspaceViews = isScript
+    ? views.filter(v => v !== "Write" && v !== "Preview")
+    : views.filter(v => v !== "Script Studio" && v !== "Channels");
+  // Retain access to legacy freeform script material without presenting it as a book.
+  if (isScript) workspaceViews.splice(1, 0, "Write", "Preview");
+  const viewLabel = (v: View) => ({
+    "Script Studio": "Video script studio", Write: isScript ? "Freeform draft" : "Manuscript",
+    Research: isScript ? "Script research" : "Research",
+    Conversations: isScript ? "Script conversations" : "Conversations",
+    Memory: isScript ? "Script memory" : "Project memory", Frameworks: "Core frameworks",
+    Channels: "Channel profiles", Gems: isScript ? "Script gems" : "Writing gems",
+    Preview: isScript ? "Draft preview" : "Book preview", Settings: "Settings",
+  }[v]);
+  const switchWorkspace = (type: Project["project_type"]) => void action(async () => {
+    const existing = projects.find(p => p.project_type === type);
+    if (existing) await activate(existing);
+    else { setNewProjectType(type); setNewScriptChannel(null); setNewProject(true); }
+    setNav(false);
+  });
   if (boot)
     return (
       <div className="welcome">
@@ -220,7 +242,11 @@ export default function App() {
       {!focus && (
         <aside className="navigator">
           <div className="brand">
-            NOEMA<span>WRITING STUDIO</span>
+            NOEMA<span>{isScript ? "YOUTUBE SCRIPT STUDIO" : "BOOK WRITING STUDIO"}</span>
+          </div>
+          <div className="workspace-switch" aria-label="Switch workspace">
+            <button aria-pressed={!isScript} onClick={() => switchWorkspace("Book")} disabled={busy}>Books</button>
+            <button aria-pressed={!!isScript} onClick={() => switchWorkspace("Video Script")} disabled={busy}>YouTube channels</button>
           </div>
           <div className="project-switch">
             <div className="eyebrow">CURRENT PROJECT</div>
@@ -234,26 +260,26 @@ export default function App() {
               }}
             >
               {!project && <option value="">Choose your writing project</option>}
-              <optgroup label="Books">{projects.filter(p=>p.project_type==="Book").map(p=>
-                <option key={p.id} value={p.id}>{p.title}</option>)}</optgroup>
-              {channels.map(c=><optgroup key={c.id} label={c.name}>
+              {!isScript && <optgroup label="Books">{projects.filter(p=>p.project_type==="Book").map(p=>
+                <option key={p.id} value={p.id}>{p.title}</option>)}</optgroup>}
+              {isScript && channels.map(c=><optgroup key={c.id} label={c.name}>
                 {projects.filter(p=>p.project_type==="Video Script" && p.channel_id===c.id)
                   .map(p=><option key={p.id} value={p.id}>{p.title}</option>)}
               </optgroup>)}
-              <optgroup label="Unassigned video scripts">
+              {isScript && <optgroup label="Unassigned video scripts">
                 {projects.filter(p=>p.project_type==="Video Script" && !p.channel_id)
                   .map(p=><option key={p.id} value={p.id}>{p.title}</option>)}
-              </optgroup>
+              </optgroup>}
             </select>
             <button
               className="new-project"
-              onClick={() => void action(async () => {setNewScriptChannel(null);setNewProject(true);})}
+              onClick={() => void action(async () => {setNewScriptChannel(null);setNewProjectType(null);setNewProject(true);})}
             >
               + New writing project
             </button>
           </div>
           <nav aria-label="Workspace">
-            {views.filter(v => v !== "Script Studio" || project?.project_type === "Video Script").map((v) => (
+            {workspaceViews.map((v) => (
               <button
                 key={v}
                 className={view === v ? "selected" : ""}
@@ -261,28 +287,15 @@ export default function App() {
                 disabled={!project || busy}
               >
                 <span aria-hidden="true">{symbols[views.indexOf(v)]}</span>
-                {v === "Script Studio"
-                  ? "Video script studio"
-                  : v === "Write"
-                  ? "Manuscript"
-                  : v === "Memory"
-                    ? "Project memory"
-                    : v === "Frameworks"
-                      ? "Core frameworks"
-                    : v === "Channels"
-                      ? "Channel profiles"
-                    : v === "Gems"
-                      ? "Writing gems"
-                    : v === "Preview"
-                      ? (project?.project_type === "Video Script" ? "Freeform preview" : "Book preview")
-                      : v}
+                {viewLabel(v)}
               </button>
             ))}
           </nav>
+          {(!isScript || view === "Write" || view === "Preview") && <>
           <div className="chapter-heading">
             <span className="eyebrow">{project?.project_type === "Video Script" ? "SCRIPT SECTIONS" : "CHAPTERS"} · {chapters.length}</span>
             <button
-              aria-label="Add chapter"
+              aria-label={isScript ? "Add draft section" : "Add chapter"}
               disabled={!project || busy}
               onClick={addChapter}
             >
@@ -324,7 +337,7 @@ export default function App() {
                     title="Rename chapter"
                     aria-label={`Rename ${c.title}`}
                     onClick={() => {
-                      const title = prompt("Chapter title", c.title);
+                      const title = prompt(isScript ? "Draft section title" : "Chapter title", c.title);
                       if (title?.trim())
                         void action(async () => {
                           await request("rename_chapter", {
@@ -346,7 +359,7 @@ export default function App() {
                     onClick={() => {
                       if (
                         confirm(
-                          `Delete “${c.title}” from your manuscript? Its content will remain in the database for recovery.`,
+                          `Delete “${c.title}” from your ${isScript ? "draft" : "manuscript"}? Its content will remain in the database for recovery.`,
                         )
                       )
                         void action(async () => {
@@ -368,9 +381,10 @@ export default function App() {
               </li>
             ))}
           </ol>
+          </>}
           <div className="nav-footer">
             <span className="local-dot" />
-            Local & private<span>Version 0.1</span>
+            Local & private<span>Version 0.1.1</span>
           </div>
         </aside>
       )}
@@ -385,7 +399,7 @@ export default function App() {
           </button>
           <div className="breadcrumb">
             {project?.title ?? "Your writing studio"}
-            <span> / {view}</span>
+            <span> / {viewLabel(view)}</span>
           </div>
           <div className="top-actions">
             {project && <button title="Save a passage to Writing Gems" onClick={() => {
@@ -395,7 +409,7 @@ export default function App() {
                 chapter_id: doc?.id ?? null,
                 kind: "Quote",
                 origin: view === "Write" ? "Author" : "Unspecified",
-                source_label: view === "Write" && doc ? `Manuscript: ${doc.title}` : "",
+                source_label: view === "Write" && doc ? `${isScript ? "Draft" : "Manuscript"}: ${doc.title}` : "",
                 notes: "",
                 status: "Candidate",
               });
@@ -450,6 +464,7 @@ export default function App() {
             ) : view === "Write" ? (
               doc ? (
                 <Manuscript
+                  script={!!isScript}
                   disabled={busy}
                   key={doc.id}
                   doc={doc}
@@ -462,12 +477,13 @@ export default function App() {
                   <h1>{project.project_type === "Book" ? "Every book begins with a thought." : "Every script begins with a thought."}</h1>
                   <p>Create a section and give it room to grow.</p>
                   <button className="primary" onClick={addChapter}>
-                    Create a chapter
+                    {isScript ? "Create a draft section" : "Create a chapter"}
                   </button>
                 </div>
               )
             ) : view === "Research" || view === "Conversations" ? (
               <Research
+                script={!!isScript}
                 key={`${project.id}-${view}`}
                 project={project.id}
                 conversations={view === "Conversations"}
@@ -476,6 +492,7 @@ export default function App() {
               />
             ) : view === "Memory" ? (
               <MemoryView
+                script={!!isScript}
                 key={project.id}
                 project={project.id}
                 onError={report}
@@ -494,6 +511,7 @@ export default function App() {
               />
             ) : view === "Gems" ? (
               <GemsView
+                script={!!isScript}
                 project={project.id}
                 chapters={chapters}
                 capture={captureGem}
@@ -554,6 +572,7 @@ export default function App() {
                   ×
                 </button>
                 <Search
+                  scope={isScript ? "SCRIPT RESEARCH" : "BOOK RESEARCH"}
                   key={project.id}
                   project={project.id}
                   onOpen={setSource}
@@ -575,6 +594,7 @@ export default function App() {
         <ProjectForm
           channels={channels}
           initialChannelId={newScriptChannel}
+          initialType={newProjectType}
           onCreateChannel={async name=>{
             const saved=await request<{id:string}>("save_channel",{name,confirmed:false});
             await reloadChannels();
@@ -599,18 +619,19 @@ export default function App() {
   );
 }
 function ProjectForm({
-  canCancel, onCancel, onCreate, channels, initialChannelId, onCreateChannel,
+  canCancel, onCancel, onCreate, channels, initialChannelId, initialType, onCreateChannel,
 }: {
   canCancel: boolean;
   onCancel: () => void;
   onCreate: (fields: Record<string, string>) => Promise<void>;
   channels: ChannelProfile[];
   initialChannelId: string | null;
+  initialType: Project["project_type"] | null;
   onCreateChannel: (name:string)=>Promise<string>;
 }) {
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
-  const [projectType, setProjectType] = useState<"Book" | "Video Script">(initialChannelId?"Video Script":"Book");
+  const [projectType, setProjectType] = useState<"Book" | "Video Script" | null>(initialChannelId ? "Video Script" : initialType);
   const [channelId,setChannelId] = useState(initialChannelId??"");
   const [newChannelName,setNewChannelName] = useState("");
   const [description, setDescription] = useState("");
@@ -625,6 +646,7 @@ function ProjectForm({
         aria-label="New writing project"
         onSubmit={async (e) => {
           e.preventDefault();
+          if (!projectType) return;
           setBusy(true);
           try {
             await onCreate({
@@ -643,18 +665,22 @@ function ProjectForm({
       >
         <div className="brand">NOEMA</div>
         <div className="eyebrow">WHERE THOUGHT BECOMES LEGACY</div>
-        <h1>Make room for your next project.</h1>
-        <p>
-          A private home for your books, scripts, sources, and the ideas that
-          connect them.
-        </p>
-        <label>
-          Project format
-          <select value={projectType} onChange={e => setProjectType(e.target.value as "Book" | "Video Script")}>
-            <option value="Book">Book</option>
-            <option value="Video Script">Video script</option>
-          </select>
-        </label>
+        {!projectType ? <>
+          <h1>What would you like to create?</h1>
+          <p>Choose the workspace for this project.</p>
+          <div className="project-type-cards">
+            <button type="button" onClick={() => setProjectType("Book")}>
+              <strong>Book project</strong><span>Chapters, manuscript, book research, memory, and preview.</span>
+            </button>
+            <button type="button" onClick={() => setProjectType("Video Script")}>
+              <strong>YouTube channel script</strong><span>Channel identity, scenes, narration, visuals, citations, and production notes.</span>
+            </button>
+          </div>
+          {canCancel && <button type="button" onClick={onCancel}>Cancel</button>}
+        </> : <>
+        <button type="button" className="text-button" disabled={busy} onClick={() => setProjectType(null)}>← Change project type</button>
+        <h1>{projectType === "Book" ? "Create a book project" : "Create a channel script"}</h1>
+        <p>{projectType === "Book" ? "A dedicated home for your manuscript and book research." : "Write and plan a video for one of your YouTube channels."}</p>
         {projectType === "Video Script" && <div className="channel-create-inline">
           <label>Channel
             <select aria-label="Video script channel" required value={channelId}
@@ -701,7 +727,7 @@ function ProjectForm({
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="What is this book here to explore?"
+            placeholder={projectType === "Book" ? "What is this book here to explore?" : "What will this video explore?"}
           />
         </label>
         {error && <p role="alert">{error}</p>}
@@ -720,6 +746,7 @@ function ProjectForm({
             {busy ? "Creating…" : "Create writing project →"}
           </button>
         </div>
+        </>}
       </form>
     </div>
   );
@@ -762,7 +789,7 @@ function Preview({
       <div className="preview-controls">
         <span className="eyebrow">{project.project_type === "Video Script" ? "READ-ONLY VIDEO SCRIPT" : "READ-ONLY BOOK PREVIEW"}</span>
         <span>
-          Chapters {chapters.length ? page * 5 + 1 : 0}–
+          {project.project_type === "Book" ? "Chapters" : "Draft sections"} {chapters.length ? page * 5 + 1 : 0}–
           {Math.min(page * 5 + 5, chapters.length)} of {chapters.length}
         </span>
       </div>
@@ -791,13 +818,13 @@ function Preview({
       </article>
       <div className="row">
         <button disabled={!page} onClick={() => setPage(page - 1)}>
-          Previous chapters
+          Previous {project.project_type === "Book" ? "chapters" : "sections"}
         </button>
         <button
           disabled={(page + 1) * 5 >= chapters.length}
           onClick={() => setPage(page + 1)}
         >
-          Next chapters
+          Next {project.project_type === "Book" ? "chapters" : "sections"}
         </button>
       </div>
     </div>
@@ -821,7 +848,7 @@ function Settings({
   const [title, setTitle] = useState(project.title);
   const [author, setAuthor] = useState(project.author);
   const [description, setDescription] = useState(project.description);
-  const [projectType, setProjectType] = useState<"Book" | "Video Script">(project.project_type);
+  const projectType = project.project_type;
   const [channelId,setChannelId] = useState(project.channel_id??"");
   const [scriptStatus,setScriptStatus] = useState(project.script_status);
   const [path, setPath] = useState("");
@@ -860,13 +887,7 @@ function Settings({
           }
         }}
       >
-        <h2>Writing project details</h2>
-        <label>Project format
-          <select value={projectType} onChange={e => setProjectType(e.target.value as "Book" | "Video Script")}>
-            <option value="Book">Book</option>
-            <option value="Video Script">Video script</option>
-          </select>
-        </label>
+        <h2>{projectType === "Book" ? "Book details" : "Channel script details"}</h2>
         {projectType === "Video Script" && <>
           <label>Channel
             <select value={channelId} onChange={e=>setChannelId(e.target.value)}>
@@ -951,7 +972,16 @@ function Settings({
         </button>
       </section>
       <section>
-        <h2>NOEMA 0.1</h2>
+        <h2>NOEMA 0.1.1 · Updates</h2>
+        <p>Update this installation without uninstalling NOEMA. Your local archive is kept separately.</p>
+        <p>Automatic downloading is not configured yet. Update downloads open your private GitHub repository in your browser.</p>
+        <button onClick={async () => {
+          try {
+            if (isTauri()) await invoke("open_update_downloads");
+            else window.open("https://github.com/StrokeDot/NOEMA/actions/workflows/windows.yml", "_blank", "noopener,noreferrer");
+            setNote("Download the newest successful Windows installer, close NOEMA, and run it to update this installation. No uninstall is needed.");
+          } catch (e) { onError(errorText(e)); }
+        }}>Open update downloads</button>
         <p>Where Thought Becomes Legacy.</p>
         <p>
           AI connections, Android packaging, EPUB, and PDF export are planned

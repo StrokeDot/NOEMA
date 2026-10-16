@@ -18,8 +18,9 @@ function emptyGem(): GemDraft {
 }
 
 export default function GemsView({
-  project, chapters, capture, onCaptureHandled, onError,
+  script = false, project, chapters, capture, onCaptureHandled, onError,
 }: {
+  script?: boolean;
   project: string;
   chapters: Chapter[];
   capture: Partial<GemDraft> | null;
@@ -62,18 +63,18 @@ export default function GemsView({
       <div className="view-heading">
         <div>
           <div className="eyebrow">PASSAGES WORTH KEEPING</div>
-          <h1>Writing Gems</h1>
-          <p>Ideas, arguments and possible book or script lines. Candidates are not confirmed positions and are not automatically inserted into the manuscript.</p>
+          <h1>{script ? "Script Gems" : "Writing Gems"}</h1>
+          <p>Ideas, arguments and possible {script ? "script" : "book"} lines. Candidates are not confirmed positions and are not automatically inserted into your {script ? "script" : "manuscript"}.</p>
         </div>
         <button className="primary" onClick={() => setEdit(emptyGem())}>+ Add passage</button>
       </div>
       <div className="gem-filters">
         <label>Search passages
-          <input aria-label="Search book gems" value={query} placeholder="Find a sentence or argument" onChange={e => {setQuery(e.target.value); setOffset(0);}} />
+          <input aria-label={script ? "Search script gems" : "Search book gems"} value={query} placeholder="Find a sentence or argument" onChange={e => {setQuery(e.target.value); setOffset(0);}} />
         </label>
-        <label>Chapter
-          <select aria-label="Filter gems by chapter" value={chapter} onChange={e => {setChapter(e.target.value); setOffset(0);}}>
-            <option value="">All chapters</option>
+        <label>{script ? "Draft section" : "Chapter"}
+          <select aria-label={script ? "Filter gems by draft section" : "Filter gems by chapter"} value={chapter} onChange={e => {setChapter(e.target.value); setOffset(0);}}>
+            <option value="">{script ? "All draft sections" : "All chapters"}</option>
             {chapters.map(c => <option value={c.id} key={c.id}>{c.title}</option>)}
           </select>
         </label>
@@ -118,7 +119,7 @@ export default function GemsView({
         <button disabled={items.length < 100} onClick={() => setOffset(n => n+100)}>More passages</button>
       </div>
       {edit && <div className="modal-backdrop">
-        <form className="modal gem-modal" role="dialog" aria-modal="true" aria-label="Edit book gem"
+        <form className="modal gem-modal" role="dialog" aria-modal="true" aria-label={script ? "Edit script gem" : "Edit book gem"}
           onSubmit={async e => {
             e.preventDefault();
             if (!edit.text.trim()) return;
@@ -141,7 +142,7 @@ export default function GemsView({
                 {gemKinds.map(k => <option key={k}>{k}</option>)}
               </select>
             </label>
-            <label>Chapter
+            <label>{script ? "Draft section" : "Chapter"}
               <select value={edit.chapter_id ?? ""} onChange={e => setEdit({ ...edit,chapter_id:e.target.value || null })}>
                 <option value="">Unassigned</option>
                 {chapters.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}

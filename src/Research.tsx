@@ -3,9 +3,11 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { request, errorText } from "./api";
 import type { Hit, Source, Passage } from "./types";
 export function Search({
+  scope = "YOUR PROJECT KNOWLEDGE",
   project,
   onOpen,
 }: {
+  scope?: string;
   project: string;
   onOpen: (source: Source) => void;
 }) {
@@ -43,7 +45,7 @@ export function Search({
   }, [query, project, page]);
   return (
     <>
-      <div className="eyebrow">YOUR PROJECT KNOWLEDGE</div>
+      <div className="eyebrow">{scope}</div>
       <h2>Find a thought.</h2>
       <p className="muted">
         Search original passages from your research and conversations.
@@ -217,11 +219,13 @@ export function SourceReader({
   );
 }
 export default function Research({
+  script = false,
   project,
   conversations,
   onOpen,
   onError,
 }: {
+  script?: boolean;
   project: string;
   conversations: boolean;
   onOpen: (s: Source) => void;
@@ -301,7 +305,7 @@ export default function Research({
       <div className="view-heading">
         <div>
           <div className="eyebrow">A LIBRARY OF YOUR OWN</div>
-          <h1>{conversations ? "Conversations" : "Research library"}</h1>
+          <h1>{conversations ? (script ? "Script conversations" : "Conversations") : (script ? "Script research" : "Research library")}</h1>
           <p>Keep the source. Find the idea. Build on what you know.</p>
         </div>
         <button className="primary" disabled={busy} onClick={importFiles}>

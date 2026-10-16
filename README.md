@@ -195,3 +195,7 @@ preservation of the imported original, and the specific no-text/OCR limitation.
 No PDF dependency or importer workaround was required.
 
 Verified installer: [download the Windows artifact](https://github.com/StrokeDot/NOEMA/actions/runs/38858899633/artifacts/12028082487). See [the full verification report](docs/VERIFICATION.md) for test scope, checksums, and limitations.
+
+## Version 0.1.1
+
+Book projects and YouTube scripts now have separate setup, navigation, and project lists. See [workspaces and update behavior](docs/WORKSPACES_AND_UPDATES.md). Settings includes a private update-download shortcut; automatic in-app installation is not configured. Run the newer installer over the existing installation without uninstalling.

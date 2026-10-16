@@ -7,7 +7,7 @@ test("video script scenes keep narration, visuals and timing after reopening", a
   await expect(page.getByRole("button", { name: "+ New writing project" })).toBeVisible();
   const modal=page.getByRole("dialog",{name:"New writing project"});
   if (!(await modal.isVisible())) await page.getByRole("button",{name:"+ New writing project"}).click();
-  await modal.getByLabel("Project format").selectOption("Video Script");
+  await modal.getByRole("button", { name: "YouTube channel script", exact: false }).click();
   await modal.getByLabel("New channel name").fill("The Truth Project");
   await modal.getByRole("button",{name:"+ Create channel"}).click();
   await expect(modal.getByLabel("Video script channel")).not.toHaveValue("");
@@ -16,6 +16,9 @@ test("video script scenes keep narration, visuals and timing after reopening", a
   await modal.getByRole("button",{name:"Create writing project"}).click();
   await expect(modal).toBeHidden();
   await expect(page.getByRole("button",{name:"Video script studio"})).toBeVisible();
+  await expect(page.getByRole("navigation", {name:"Workspace"}).getByRole("button", {name:"Book preview", exact:true})).toHaveCount(0);
+  await expect(page.getByRole("navigation", {name:"Workspace"}).getByRole("button", {name:"Manuscript", exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button", {name:"Channel profiles", exact:true})).toBeVisible();
   await page.getByRole("button",{name:"Create first scene"}).click();
   await page.getByLabel("Scene / segment title").fill("Opening hook");
   await page.getByLabel("Narration / voiceover").fill("Redemption begins with a choice.");
@@ -41,9 +44,27 @@ test("video script scenes keep narration, visuals and timing after reopening", a
   await expect(page.getByLabel("Narration / voiceover")).toHaveValue("Redemption begins with a choice.");
   await expect(page.getByLabel("Footage and visual directions")).toHaveValue("Wide shot of Arthur near the bench.");
   await expect(page.getByLabel("Planned duration (seconds)")).toHaveValue("42");
-  await page.getByRole("button",{name:"Manuscript",exact:true}).click();
+  await page.getByRole("button",{name:"Freeform draft",exact:true}).click();
   await expect(page.getByText("Every script begins with a thought.")).toBeVisible();
   await page.getByRole("button",{name:"Video script studio"}).click();
   await expect(page.locator(".script-scene")).toHaveCount(2);
+  await page.getByRole("button", { name:"Books", exact:true }).click();
+  // If no book exists yet, the separate workspace opens a book-only setup.
+  const bookModal = page.getByRole("dialog", {name:"New writing project"});
+  if (await bookModal.isVisible()) {
+    await bookModal.getByLabel("Book title", {exact:true}).fill("Workspace separation book");
+    await bookModal.getByLabel("Author", {exact:true}).fill("Author");
+    await bookModal.getByRole("button", {name:"Create writing project"}).click();
+  }
+  await expect(page.getByRole("button", {name:"Manuscript", exact:true})).toBeVisible();
+  await expect(page.getByRole("button", {name:"Channel profiles", exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button", {name:"Video script studio", exact:true})).toHaveCount(0);
+  await expect(page.getByLabel("Current project").locator("option").filter({hasText:"Arthur Morgan redemption"})).toHaveCount(0);
+  await page.getByRole("button", {name:"YouTube channels", exact:true}).click();
+  await expect(page.locator(".script-scene")).toHaveCount(2);
+  await expect(page.getByLabel("Current project").locator("option").filter({hasText:"Workspace separation book"})).toHaveCount(0);
+  await page.getByRole("button", {name:"Script gems",exact:true}).click();
+  await expect(page.getByLabel("Filter gems by draft section")).toBeVisible();
+  await expect(page.getByLabel("Filter gems by chapter")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

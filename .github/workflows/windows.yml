@@ -6,6 +6,7 @@ on:
   pull_request:
 permissions:
   contents: read
+  actions: read
 jobs:
   windows:
     runs-on: windows-latest
@@ -23,6 +24,7 @@ jobs:
             src-tauri/target
             crates/noema-core/target
           key: windows-rust-${{ hashFiles('src-tauri/Cargo.lock', 'crates/noema-core/Cargo.lock') }}
+          restore-keys: windows-rust-
       - run: npm ci
       - run: npm run build
       - run: npm test
@@ -39,11 +41,20 @@ jobs:
           key: ${{ steps.rust-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
-          name: NOEMA-0.1-Windows-installer
+          name: NOEMA-0.1.1-Windows-installer
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
-      - name: Install, launch, and reopen the Windows application
+      - name: Download previously verified 0.1.0 installer for upgrade testing
+        uses: actions/download-artifact@v4
+        with:
+          name: NOEMA-0.1-Windows-installer
+          run-id: 38858899633
+          github-token: ${{ github.token }}
+          path: baseline-installer
+      - name: Install, upgrade, and reopen the Windows application
         run: node scripts/windows-smoke.mjs
+        env:
+          NOEMA_BASELINE_DIR: ${{ github.workspace }}/baseline-installer
         timeout-minutes: 5
       - name: Upload verification evidence
         if: always()

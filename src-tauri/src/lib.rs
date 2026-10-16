@@ -34,6 +34,19 @@ async fn request(
     .await
     .map_err(|e| e.to_string())?
 }
+// Only this fixed project URL may be opened; no arbitrary shell command is accepted.
+#[tauri::command]
+fn open_update_downloads() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg("https://github.com/StrokeDot/NOEMA/actions/workflows/windows.yml")
+            .spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("Update downloads are currently supported on Windows.".into())
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -44,7 +57,7 @@ pub fn run() {
             app.manage(Arc::new(Mutex::new(store)));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![request])
+        .invoke_handler(tauri::generate_handler![request, open_update_downloads])
         .run(tauri::generate_context!())
         .expect("Unable to start NOEMA; check your data-folder permissions");
 }

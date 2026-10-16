@@ -1126,3 +1126,12 @@ main {
  .script-scenes .eyebrow{margin-bottom:5px;}.script-scenes .script-scene{padding:8px;}
  .cue-dual-columns,.cue-detail-grid{grid-template-columns:1fr;}
  .cue-editor{padding:20px 15px 50px;}}
+
+.workspace-switch { display:flex; gap:6px; margin:18px 0 4px; }
+.workspace-switch button { flex:1; padding:8px 5px; font-size:11px; }
+.workspace-switch button[aria-pressed=true] { background:var(--accent-soft); border-color:var(--accent); }
+.project-type-cards { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:26px 0; }
+.project-type-cards button { text-align:left; padding:24px; white-space:normal; }
+.project-type-cards strong { display:block; font:24px Georgia,serif; margin-bottom:14px; }
+.project-type-cards span { color:var(--muted); line-height:1.7; }
+@media(max-width:650px) { .project-type-cards { grid-template-columns:1fr; } }

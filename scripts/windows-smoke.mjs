@@ -11,7 +11,7 @@ if (process.platform !== 'win32' || !process.env.CI || !process.env.RUNNER_TEMP)
   throw new Error('This smoke test requires an ephemeral Windows CI runner.');
 const output = resolve('test-results');
 await mkdir(output, { recursive: true });
-const report = { installed: false, launches: 0, embeddedAssets: false, bookReopened: false, scriptReopened: false };
+const report = { installed: false, launches: 0, embeddedAssets: false, bookReopened: false, scriptReopened: false, upgradePreserved: false };
 let app, browser;
 let testPolicy = false;
 const pause = ms => new Promise(r => setTimeout(r, ms));
@@ -59,7 +59,14 @@ try {
   const installers = (await readdir(bundle)).filter(f => f.endsWith('.exe'));
   if (installers.length !== 1) throw new Error('Expected exactly one NSIS installer.');
   // NSIS requires /D to be the final argument, without embedded quotes.
-  await run(join(bundle, installers[0]), ['/S', `/D=${installDir}`]);
+  const currentInstaller = join(bundle, installers[0]);
+  let initialInstaller = currentInstaller;
+  if (process.env.NOEMA_BASELINE_DIR) {
+    const files = (await readdir(process.env.NOEMA_BASELINE_DIR)).filter(f => f.endsWith('.exe'));
+    if (files.length !== 1) throw new Error('Expected one baseline installer.');
+    initialInstaller = join(process.env.NOEMA_BASELINE_DIR, files[0]);
+  }
+  await run(initialInstaller, ['/S', `/D=${installDir}`]);
   const executables = (await readdir(installDir)).filter(f => /^noema\.exe$/i.test(f));
   if (executables.length !== 1) throw new Error('Installer did not create noema.exe.');
   report.installed = true;
@@ -72,6 +79,8 @@ try {
   let page = await launch(executable);
   const modal = page.getByRole('dialog', { name: 'New writing project' });
   if (!(await modal.isVisible())) await page.getByRole('button', { name: '+ New writing project' }).click();
+  if (await modal.getByRole('button', { name: 'Book project', exact: false }).isVisible())
+    await modal.getByRole('button', { name: 'Book project', exact: false }).click();
   await modal.getByLabel('Book title', { exact: true }).fill('Windows installer persistence check');
   await modal.getByLabel('Author', { exact: true }).fill('NOEMA verification');
   await modal.getByRole('button', { name: 'Create writing project' }).click();
@@ -86,7 +95,9 @@ try {
   report.bookReopened = true;
   await page.getByRole('button', { name: '+ New writing project' }).click();
   const project = page.getByRole('dialog', { name: 'New writing project' });
-  await project.getByLabel('Project format').selectOption('Video Script');
+  if (await project.getByRole('button', { name: 'YouTube channel script', exact: false }).isVisible())
+    await project.getByRole('button', { name: 'YouTube channel script', exact: false }).click();
+  else await project.getByLabel('Project format').selectOption('Video Script');
   await project.getByLabel('New channel name').fill('Installed channel');
   await project.getByRole('button', { name: '+ Create channel' }).click();
   await expect(project.getByLabel('Video script channel')).not.toHaveValue('');
@@ -103,6 +114,22 @@ try {
   await expect(page.getByLabel('Narration / voiceover')).toHaveValue('Persistent narration.');
   await expect(page.getByLabel('Footage and visual directions')).toHaveValue('Persistent visual direction.');
   report.scriptReopened = true;
+  await stop();
+  if (process.env.NOEMA_BASELINE_DIR) {
+    // Upgrade the same installation, leaving its real app-data folder in place.
+    await run(currentInstaller, ['/S', `/D=${installDir}`]);
+    page = await launch(executable);
+    await expect(page.getByLabel('Narration / voiceover')).toHaveValue('Persistent narration.');
+    await expect(page.getByLabel('Footage and visual directions')).toHaveValue('Persistent visual direction.');
+    await expect(page.getByRole('button', {name:'Manuscript', exact:true})).toHaveCount(0);
+    await page.getByRole('button', {name:'Books', exact:true}).click();
+    await expect(page.locator('[contenteditable=true]')).toContainText('Written in the installed Windows application.');
+    await expect(page.getByRole('button', {name:'Channel profiles', exact:true})).toHaveCount(0);
+    await stop();
+    page = await launch(executable);
+    await expect(page.locator('[contenteditable=true]')).toContainText('Written in the installed Windows application.');
+    report.upgradePreserved = true;
+  } else page = await launch(executable);
   await page.screenshot({ path: join(output, 'installed-windows-app.png') });
   await stop();
 } catch (error) {
