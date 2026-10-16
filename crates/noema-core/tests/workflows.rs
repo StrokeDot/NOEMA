@@ -608,3 +608,72 @@ fn writing_context_separates_confirmed_author_premises_from_project_sources() {
     let mut reopened=Store::open(dir.path()).unwrap();
     assert_eq!(call(&mut reopened,"project_writing_context",json!({"project_id":p}))["sources"][0]["role"],"Critical Perspective");
 }
+
+#[test]
+fn word_epub_and_project_chat_persist_with_strict_isolation() {
+    use std::io::Write;
+    let d=tempfile::tempdir().unwrap();
+    let mut s=Store::open(d.path()).unwrap();
+    let book=project(&mut s,"Research-backed book");
+    let other=project(&mut s,"Unrelated book");
+    let docx=d.path().join("chapters.docx");
+    {
+        let file=fs::File::create(&docx).unwrap();
+        let mut zip=zip::ZipWriter::new(file);
+        zip.start_file("word/document.xml",zip::write::SimpleFileOptions::default()).unwrap();
+        zip.write_all(br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Chapter about freedom</w:t></w:r></w:p><w:p><w:r><w:t>Personal responsibility</w:t></w:r></w:p></w:body></w:document>"#).unwrap();
+        zip.finish().unwrap();
+    }
+    let word=import(&mut s,&book,&docx);
+    let sid=word["id"].as_str().unwrap().to_string();
+    assert_eq!(word["passages"],1);
+    assert_eq!(call(&mut s,"source_passages",json!({"project_id":book,"id":sid}))[0]["text"]
+        .as_str().unwrap().contains("Personal responsibility"),true);
+    assert_eq!(call(&mut s,"source_passages",json!({"project_id":other,"id":sid})),json!([]));
+    call(&mut s,"set_working_document",json!({"project_id":book,"source_id":sid,"enabled":true}));
+    assert!(s.request("set_working_document",json!({"project_id":other,"source_id":sid,"enabled":true})).is_err());
+    let chapter=call(&mut s,"create_chapter_from_source",
+        json!({"project_id":book,"source_id":sid,"title":"Imported draft"}))["id"].as_str().unwrap().to_string();
+    let imported=call(&mut s,"chapter",json!({"project_id":book,"id":chapter}));
+    assert!(imported["text"].as_str().unwrap().contains("Chapter about freedom"));
+    assert!(!imported["html"].as_str().unwrap().contains("<script>"));
+    assert!(s.request("create_chapter_from_source",
+        json!({"project_id":other,"source_id":sid,"title":"Do not copy"})).is_err());
+    let epub=d.path().join("notes.epub");
+    {
+        let file=fs::File::create(&epub).unwrap();
+        let mut zip=zip::ZipWriter::new(file);
+        let opt=zip::write::SimpleFileOptions::default();
+        zip.start_file("META-INF/container.xml",opt).unwrap();
+        zip.write_all(br#"<container><rootfiles><rootfile full-path="OEBPS/book.opf"/></rootfiles></container>"#).unwrap();
+        zip.start_file("OEBPS/book.opf",opt).unwrap();
+        zip.write_all(br#"<package><manifest><item id="one" href="1.xhtml"/><item id="two" href="2.xhtml"/></manifest><spine><itemref idref="two"/><itemref idref="one"/></spine></package>"#).unwrap();
+        zip.start_file("OEBPS/1.xhtml",opt).unwrap();
+        zip.write_all(b"<html><body><p>First book chapter</p></body></html>").unwrap();
+        zip.start_file("OEBPS/2.xhtml",opt).unwrap();
+        zip.write_all(b"<html><body><p>Second book chapter</p></body></html>").unwrap();
+        zip.finish().unwrap();
+    }
+    let ebook=import(&mut s,&book,&epub);
+    let passages=call(&mut s,"source_passages",json!({"project_id":book,"id":ebook["id"]}));
+    assert_eq!(passages[0]["location"].as_str().unwrap().contains("2.xhtml"),true);
+    assert!(passages[0]["text"].as_str().unwrap().contains("Second book chapter"));
+    assert!(passages[1]["text"].as_str().unwrap().contains("First book chapter"));
+    call(&mut s,"append_chat_message",json!({"project_id":book,"role":"user","content":"Explain my freedom framework"}));
+    call(&mut s,"append_chat_message",json!({"project_id":book,"role":"assistant","content":"Here is one candidate passage.","provider":"ollama"}));
+    let context=call(&mut s,"chat_context",json!({"project_id":book,"query":"responsibility freedom"}));
+    assert!(!context["passages"].as_array().unwrap().is_empty());
+    assert_eq!(context["recent_messages"].as_array().unwrap().len(),2);
+    assert!(context["passages"].as_array().unwrap().iter().any(|x|x["working_document"]==1));
+    assert_eq!(call(&mut s,"chat_history",json!({"project_id":other})),json!([]));
+    let made=call(&mut s,"create_chapter_from_text",json!({"project_id":book,"title":"AI proposal",
+        "text":"<script>danger</script> & truthful thinking"}));
+    let escaped=call(&mut s,"chapter",json!({"project_id":book,"id":made["id"]}));
+    assert!(escaped["html"].as_str().unwrap().contains("&lt;script&gt;"));
+    assert!(s.request("append_chat_message",json!({"project_id":other,"role":"system","content":"No"})).is_err());
+    drop(s);
+    let mut again=Store::open(d.path()).unwrap();
+    assert_eq!(call(&mut again,"chat_history",json!({"project_id":book})).as_array().unwrap().len(),2);
+    assert_eq!(call(&mut again,"sources",json!({"project_id":book})).as_array().unwrap().iter()
+        .filter(|s|s["working_document"]==1).count(),1);
+}

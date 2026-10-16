@@ -280,10 +280,24 @@ impl Store {
                 let source=required(&a,"source_id")?;
                 let title=required(&a,"title")?.trim();
                 if title.len()>500 {return Err("Chapter title is too long".into());}
-                let mut stmt=self.conn.prepare("SELECT text FROM passages WHERE project_id=? AND source_id=? ORDER BY id")?;
-                let chunks:Vec<String>=stmt.query_map(params![pid,source],|r|r.get(0))?.collect::<std::result::Result<_,_>>()?;
+                let mut stmt=self.conn.prepare("SELECT location,text FROM passages WHERE project_id=? AND source_id=? ORDER BY id")?;
+                let chunks:Vec<(String,String)>=stmt.query_map(params![pid,source],|r|Ok((r.get(0)?,r.get(1)?)))?
+                    .collect::<std::result::Result<_,_>>()?;
                 if chunks.is_empty() {return Err("No readable source text in this project".into());}
-                let text=chunks.join("\n\n");
+                // Stored chunks overlap by 160 characters for search continuity.
+                // Remove only intra-section overlap when rebuilding an editable chapter.
+                let mut previous=String::new();
+                let mut parts=Vec::new();
+                for (location,content) in chunks {
+                    let label=location.split(" · characters ").next().unwrap_or("").to_owned();
+                    if label==previous {
+                        parts.push(content.chars().skip(160).collect::<String>());
+                    }else{
+                        parts.push(content);
+                    }
+                    previous=label;
+                }
+                let text=parts.join("\n\n");
                 if text.len()>2_000_000 {return Err("The working document is too large for one chapter; split it first".into());}
                 let html=to_chapter_html(&text);
                 let cid=id();
