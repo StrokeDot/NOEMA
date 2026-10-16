@@ -594,7 +594,7 @@ fn writing_context_separates_confirmed_author_premises_from_project_sources() {
     call(&mut store,"set_framework_active",json!({"project_id":p,"framework_id":f,"active":true}));
     let source=dir.path().join("research-note.txt");
     fs::write(&source,"Evidence should be assessed independently.").unwrap();
-    let id=call(&mut store,"import",json!({"project_id":p,"path":source.to_string_lossy()}))["id"]
+    let id=import(&mut store,&p,&source)["id"]
         .as_str().unwrap().to_string();
     call(&mut store,"source_guidance",json!({"project_id":p,"id":id,"role":"Critical Perspective",
         "use_guidance":"Steelman before rebutting"}));
