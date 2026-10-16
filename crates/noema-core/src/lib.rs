@@ -64,7 +64,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 3 {
+        if ver > 4 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -84,6 +84,11 @@ impl Store {
             tx.execute_batch(include_str!("migrations/v3_script_frameworks.sql"))?;
             tx.commit()?;
         }
+        if ver < 4 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v4_channels.sql"))?;
+            tx.commit()?;
+        }
         Ok(Self { conn, root })
     }
     pub fn request(&mut self, action: &str, a: Value) -> Result<Value> {
@@ -97,26 +102,43 @@ impl Store {
                 }
                 let kind = a["project_type"].as_str().unwrap_or("Book");
                 if kind != "Book" && kind != "Video Script" { return Err("Unsupported project type".into()); }
+                let channel = a["channel_id"].as_str().filter(|v|!v.is_empty());
+                if kind == "Book" && channel.is_some() {
+                    return Err("Only video scripts can belong to a channel".into());
+                }
+                if let Some(cid) = channel {
+                    let exists: i64=self.conn.query_row("SELECT count(*) FROM channel_profiles WHERE id=?", [cid], |r|r.get(0))?;
+                    if exists!=1 { return Err("Channel not found".into()); }
+                }
                 let id = id();
                 self.conn.execute(
-                    "INSERT INTO projects(id,title,author,description,project_type,created_at) VALUES(?,?,?,?,?,?)",
-                    params![id,title,author,string(&a,"description"),kind,now()])?;
+                    "INSERT INTO projects(id,title,author,description,project_type,channel_id,created_at) VALUES(?,?,?,?,?,?,?)",
+                    params![id,title,author,string(&a,"description"),kind,channel,now()])?;
                 Ok(json!({
                 "id":id}
                 ))
             }
             "update_project" => {
+                let pid=required(&a,"project_id")?;
+                let (old_type,old_channel,old_status): (String,Option<String>,String)=self.conn.query_row(
+                    "SELECT project_type,channel_id,script_status FROM projects WHERE id=?",
+                    [pid], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+                let kind=a["project_type"].as_str().filter(|v|!v.is_empty()).unwrap_or(&old_type);
+                if !["Book","Video Script"].contains(&kind) {return Err("Unsupported project type".into());}
+                let channel = if a.get("channel_id").is_some() {
+                    a["channel_id"].as_str().filter(|v|!v.is_empty()).map(str::to_string)
+                } else { old_channel };
+                if kind=="Book" && channel.is_some() {return Err("Only video scripts can belong to a channel".into());}
+                if let Some(cid)=&channel {
+                    let found:i64=self.conn.query_row("SELECT count(*) FROM channel_profiles WHERE id=?", [cid], |r|r.get(0))?;
+                    if found!=1 {return Err("Channel not found".into());}
+                }
+                let status=a["script_status"].as_str().unwrap_or(&old_status);
+                if !["Draft","In Production","Published"].contains(&status) {return Err("Invalid script status".into());}
                 self.conn.execute(
-                    "UPDATE projects SET title=?,author=?,description=?,settings=?,project_type=COALESCE(NULLIF(?,''),project_type) WHERE id=?",
-                    params![
-                        required(&a, "title")?,
-                        required(&a, "author")?,
-                        string(&a, "description"),
-                        a["settings"].to_string(),
-                        string(&a, "project_type"),
-                        required(&a, "project_id")?
-                    ],
-                )?;
+                    "UPDATE projects SET title=?,author=?,description=?,settings=?,project_type=?,channel_id=?,script_status=? WHERE id=?",
+                    params![required(&a,"title")?,required(&a,"author")?,string(&a,"description"),
+                        a["settings"].to_string(),kind,channel,status,pid])?;
                 Ok(json!(true))
             }
             "chapters" => rows(&self.conn, "SELECT id,title,position,version,updated_at,length(text) AS characters FROM chapters WHERE project_id=? AND deleted=0 ORDER BY position,id", params![required(&a, "project_id")?]),
@@ -338,6 +360,52 @@ impl Store {
                 if affected == 0 { return Err("Gem not found in this book".into()); }
                 Ok(json!(true))
             }
+            "channels" => rows(&self.conn,
+                "SELECT ch.*, (SELECT count(*) FROM projects p WHERE p.channel_id=ch.id AND p.project_type='Video Script') AS script_count FROM channel_profiles ch ORDER BY ch.name COLLATE NOCASE,ch.id",
+                []),
+            "save_channel" => {
+                let name=required(&a,"name")?.trim();
+                if name.len()>300 {return Err("Channel name is too long".into());}
+                for field in ["description","audience","voice","editorial_rules","content_pillars","original_text"] {
+                    if string(&a,field).len()>100_000 { return Err(format!("{field} is too long").into()); }
+                }
+                let confirmed=a["confirmed"].as_bool().unwrap_or(false);
+                let found=a["id"].as_str().filter(|v|!v.is_empty());
+                let cid=found.map(str::to_string).unwrap_or_else(id);
+                let changed=if found.is_some() {
+                    self.conn.execute(
+                        "UPDATE channel_profiles SET name=?,description=?,audience=?,voice=?,editorial_rules=?,content_pillars=?,confirmed=?,updated_at=? WHERE id=?",
+                        params![name,string(&a,"description"),string(&a,"audience"),string(&a,"voice"),string(&a,"editorial_rules"),string(&a,"content_pillars"),if confirmed {1} else {0},now(),cid])?
+                } else {
+                    self.conn.execute(
+                        "INSERT INTO channel_profiles(id,name,description,audience,voice,editorial_rules,content_pillars,original_text,source_label,confirmed,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        params![cid,name,string(&a,"description"),string(&a,"audience"),string(&a,"voice"),string(&a,"editorial_rules"),string(&a,"content_pillars"),string(&a,"original_text"),string(&a,"source_label"),if confirmed {1} else {0},now(),now()])?
+                };
+                if changed!=1 {return Err("Channel profile not found".into());}
+                Ok(json!({"id":cid}))
+            }
+            "channel_scripts" => rows(&self.conn,
+                "SELECT id,title,description,script_status,created_at FROM projects WHERE project_type='Video Script' AND channel_id=? ORDER BY created_at DESC,id LIMIT 250",
+                params![required(&a,"channel_id")?]),
+            "channel_context" => {
+                let pid=required(&a,"project_id")?;
+                let profile=rows(&self.conn,
+                    "SELECT ch.id,ch.name,ch.description,ch.audience,ch.voice,ch.editorial_rules,ch.content_pillars,ch.source_label FROM projects p JOIN channel_profiles ch ON ch.id=p.channel_id WHERE p.id=? AND p.project_type='Video Script' AND ch.confirmed=1",
+                    params![pid])?;
+                Ok(json!({"primary_channel":profile.as_array().and_then(|arr|arr.first()).cloned()}))
+            }
+            "channel_script_references" => {
+                let pid=required(&a,"project_id")?;
+                let (_,owned): (String,Option<String>)=self.conn.query_row(
+                    "SELECT project_type,channel_id FROM projects WHERE id=?", [pid], |r| Ok((r.get(0)?,r.get(1)?)))?;
+                let channel=owned.ok_or("Assign this script to a channel to compare scripts")?;
+                let include_other=a["include_other_channels"].as_bool().unwrap_or(false);
+                let published_only=a["published_only"].as_bool().unwrap_or(true);
+                let phrase=string(&a,"query");
+                rows(&self.conn,
+                    "SELECT p.id AS script_id,p.title AS script_title,p.script_status,ch.id AS channel_id,ch.name AS channel_name,c.id AS section_id,c.title AS section_title,substr(c.text,1,800) AS excerpt FROM projects p JOIN channel_profiles ch ON ch.id=p.channel_id JOIN chapters c ON c.project_id=p.id AND c.deleted=0 WHERE p.project_type='Video Script' AND p.id<>? AND (?=1 OR p.channel_id=?) AND (?=0 OR p.script_status='Published') AND (?='' OR instr(lower(p.title),lower(?))>0 OR instr(lower(c.title),lower(?))>0 OR instr(lower(c.text),lower(?))>0) ORDER BY p.created_at DESC,c.position LIMIT 60",
+                    params![pid,if include_other {1} else {0},channel,if published_only {1} else {0},phrase,phrase,phrase,phrase])
+            }
             "frameworks" => {
                 let pid = required(&a, "project_id")?;
                 rows(&self.conn,
@@ -406,7 +474,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":3}
+            "path":self.root.to_string_lossy(),"schema":4}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);

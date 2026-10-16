@@ -272,7 +272,7 @@ fn backup_reopens_and_migration_is_repeatable() {
         b.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        3
+        4
     );
 }
 #[test]
@@ -343,7 +343,7 @@ fn book_gems_persist_preserve_original_and_isolate_books() {
     assert_eq!(gem[0]["origin"],"AI Assistant");
     assert_eq!(gem[0]["source_label"],"Conversation 12");
     assert_eq!(gem[0]["status"],"Approved");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),3);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),4);
     call(&mut store,"delete_gem",json!({"project_id":a,"id":id}));
     assert_eq!(call(&mut store,"gems",json!({"project_id":a})),json!([]));
     assert_eq!(store.conn.query_row("SELECT count(*) FROM book_gems WHERE id=?",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
@@ -356,7 +356,7 @@ fn book_gem_migration_from_v1_preserves_existing_memories() {
     let p=project(&mut s,"An existing book");
     let mid=call(&mut s,"save_memory",json!({"project_id":p,"category":"Writing Instructions","title":"Style","body":"Keep original voice"}))["id"].as_str().unwrap().to_string();
     // Simulate a v0.1 database missing the gems table but retaining manuscripts/memory.
-    s.conn.execute_batch("DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
+    s.conn.execute_batch("DROP INDEX projects_channel; ALTER TABLE projects DROP COLUMN script_status; ALTER TABLE projects DROP COLUMN channel_id; DROP TABLE channel_profiles; DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
     drop(s);
     let mut s=Store::open(d.path()).unwrap();
     let memories=call(&mut s,"memories",json!({"project_id":p}));
@@ -414,5 +414,72 @@ fn scripts_and_reusable_frameworks_respect_project_activation() {
         "perspective":"External","principles":"Different premises","status":"Draft"}));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})),json!([]));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":book})),json!([]));
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),3);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),4);
+}
+
+#[test]
+fn channel_profiles_group_scripts_and_references_respect_opt_in() {
+    let dir=tempfile::tempdir().unwrap();
+    let mut s=Store::open(dir.path()).unwrap();
+    let channel_a=call(&mut s,"save_channel",json!({
+        "name":"The Truth Project","description":"Evidence-based essays",
+        "audience":"Thoughtful viewers","voice":"Reflective and clear",
+        "editorial_rules":"Distinguish evidence from speculation",
+        "confirmed":true,"original_text":"The Truth Project voice notes"
+    }))["id"].as_str().unwrap().to_string();
+    let channel_b=call(&mut s,"save_channel",json!({
+        "name":"A Fair Critique","voice":"Fair counterarguments",
+        "confirmed":true
+    }))["id"].as_str().unwrap().to_string();
+    let script_a=call(&mut s,"create_project",json!({
+        "title":"Arthur Morgan","author":"Writer","project_type":"Video Script","channel_id":channel_a
+    }))["id"].as_str().unwrap().to_string();
+    let script_b=call(&mut s,"create_project",json!({
+        "title":"A critique","author":"Writer","project_type":"Video Script","channel_id":channel_b
+    }))["id"].as_str().unwrap().to_string();
+    let book=project(&mut s,"A separate book");
+    assert!(s.request("create_project",json!({
+        "title":"Invalid","author":"Writer","project_type":"Book","channel_id":channel_a})).is_err());
+    let section_a=chapter(&mut s,&script_a);
+    let section_b=chapter(&mut s,&script_b);
+    call(&mut s,"save_chapter",json!({"id":section_a,"project_id":script_a,"version":0,
+        "html":"<p>redemption</p>","text":"redemption"}));
+    call(&mut s,"save_chapter",json!({"id":section_b,"project_id":script_b,"version":0,
+        "html":"<p>same redemption motif</p>","text":"same redemption motif"}));
+    assert_eq!(call(&mut s,"channel_scripts",json!({"channel_id":channel_a})).as_array().unwrap().len(),1);
+    assert_eq!(call(&mut s,"channel_context",json!({"project_id":script_a}))["primary_channel"]["name"],"The Truth Project");
+    assert!(call(&mut s,"channel_context",json!({"project_id":book}))["primary_channel"].is_null());
+    let params=json!({"project_id":script_a,"published_only":false,"query":"redemption"});
+    assert_eq!(call(&mut s,"channel_script_references",params.clone()),json!([]));
+    let cross=call(&mut s,"channel_script_references",json!({
+        "project_id":script_a,"published_only":false,"include_other_channels":true,"query":"redemption"}));
+    assert_eq!(cross.as_array().unwrap().len(),1);
+    assert_eq!(cross[0]["channel_name"],"A Fair Critique");
+    assert_eq!(call(&mut s,"channel_script_references",json!({
+        "project_id":script_a,"include_other_channels":true,"query":"redemption"})),json!([]));
+    call(&mut s,"update_project",json!({"project_id":script_b,"title":"A critique","author":"Writer",
+        "description":"","project_type":"Video Script","channel_id":channel_b,
+        "script_status":"Published","settings":{}}));
+    assert_eq!(call(&mut s,"channel_script_references",json!({
+        "project_id":script_a,"include_other_channels":true,"query":"redemption"})).as_array().unwrap().len(),1);
+    drop(s);
+    let mut reopened=Store::open(dir.path()).unwrap();
+    assert_eq!(call(&mut reopened,"channel_scripts",json!({"channel_id":channel_b}))[0]["script_status"],"Published");
+    assert_eq!(call(&mut reopened,"channels",json!({})).as_array().unwrap().len(),2);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),4);
+}
+#[test]
+fn legacy_script_migrates_without_losing_its_manuscript() {
+    let dir=tempfile::tempdir().unwrap();
+    let mut s=Store::open(dir.path()).unwrap();
+    let pid=call(&mut s,"create_project",json!({
+        "title":"Legacy video","author":"Writer","project_type":"Video Script"}))["id"].as_str().unwrap().to_owned();
+    let chapter_id=chapter(&mut s,&pid);
+    call(&mut s,"save_chapter",json!({"id":chapter_id,"project_id":pid,"version":0,
+        "html":"<p>Keep me</p>","text":"Keep me"}));
+    let ch=call(&mut s,"save_channel",json!({"name":"Channel A","confirmed":true}))["id"].as_str().unwrap().to_owned();
+    assert!(s.request("channel_script_references",json!({"project_id":pid})).is_err());
+    call(&mut s,"update_project",json!({"project_id":pid,"title":"Legacy video","author":"Writer",
+        "project_type":"Video Script","channel_id":ch,"script_status":"In Production","settings":{}}));
+    assert_eq!(call(&mut s,"chapter",json!({"project_id":pid,"id":chapter_id}))["text"],"Keep me");
 }
