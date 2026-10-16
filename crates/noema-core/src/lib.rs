@@ -71,7 +71,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 7 {
+        if ver > 8 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -109,6 +109,11 @@ impl Store {
         if ver < 7 {
             let tx = conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v7_project_chat.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 8 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v8_working_document.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -251,7 +256,7 @@ impl Store {
                     "type" => "kind,name COLLATE NOCASE,id",
                     _ => "created_at DESC,id",
                 };
-                let sql = format!("SELECT id,name,kind,tags,role,use_guidance,created_at,warning FROM sources WHERE project_id=? AND (?='' OR kind=?) AND (instr(lower(name),lower(?))>0 OR instr(lower(tags),lower(?))>0) ORDER BY {order} LIMIT 50 OFFSET ?");
+                let sql = format!("SELECT id,name,kind,tags,role,use_guidance,working_document,created_at,warning FROM sources WHERE project_id=? AND (?='' OR kind=?) AND (instr(lower(name),lower(?))>0 OR instr(lower(tags),lower(?))>0) ORDER BY {order} LIMIT 50 OFFSET ?");
                 rows(&self.conn, &sql, params![required(&a,"project_id")?,string(&a,"kind"),string(&a,"kind"),string(&a,"filter"),string(&a,"filter"),offset(&a)])
             }
             "create_chapter_from_text" => {
@@ -318,7 +323,7 @@ impl Store {
                     "SELECT category,title,substr(body,1,2500) AS body FROM memories WHERE project_id=? AND category IN ('Established Positions','Writing Instructions') ORDER BY updated_at DESC LIMIT 30",
                     params![pid])?;
                 let source_rows=rows(&self.conn,
-                    "SELECT p.id,s.id AS source_id,s.name,s.role,s.use_guidance,p.location,substr(p.text,1,2500) AS text FROM passages p JOIN sources s ON s.id=p.source_id WHERE p.project_id=? ORDER BY p.id DESC LIMIT 1500",
+                    "SELECT p.id,s.id AS source_id,s.name,s.role,s.use_guidance,s.working_document,p.location,substr(p.text,1,2500) AS text FROM passages p JOIN sources s ON s.id=p.source_id WHERE p.project_id=? ORDER BY p.id DESC LIMIT 1500",
                     params![pid])?;
                 let mut ranked:Vec<(usize,Value)>=source_rows.as_array().unwrap().iter().filter_map(|v|{
                     let txt=v["text"].as_str().unwrap_or("").to_lowercase();
@@ -327,7 +332,13 @@ impl Store {
                     if score>0 {Some((score,v.clone()))} else {None}
                 }).collect();
                 ranked.sort_by(|a,b|b.0.cmp(&a.0));
-                let passages:Vec<Value>=ranked.into_iter().take(9).map(|(_,v)|v).collect();
+                let working:Vec<Value>=source_rows.as_array().unwrap().iter()
+                    .filter(|v|v["working_document"]==1).take(5).cloned().collect();
+                let mut passages:Vec<Value>=working;
+                for (_,entry) in ranked.into_iter() {
+                    if passages.len()>=12{break;}
+                    if !passages.iter().any(|existing|existing["id"]==entry["id"]){passages.push(entry);}
+                }
                 let recent=rows(&self.conn,
                     "SELECT role,substr(content,1,12000) AS content FROM (SELECT role,content,created_at,id FROM project_chat_messages WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 14) ORDER BY created_at,id",
                     params![pid])?;
@@ -336,6 +347,22 @@ impl Store {
                     params![pid])?;
                 Ok(json!({"project":meta[0],"frameworks":frameworks,"established_positions":positions,
                     "passages":passages,"recent_messages":recent,"recent_chapters":chapters}))
+            }
+            "set_working_document" => {
+                let pid=required(&a,"project_id")?;
+                let sid=required(&a,"source_id")?;
+                let enable=a["enabled"].as_bool().ok_or("Missing working document choice")?;
+                let exists:i64=self.conn.query_row("SELECT count(*) FROM sources WHERE id=? AND project_id=?",
+                    params![sid,pid],|r|r.get(0))?;
+                if exists!=1{return Err("Document does not belong to the active project".into());}
+                let tx=self.conn.transaction()?;
+                if enable {
+                    tx.execute("UPDATE sources SET working_document=0 WHERE project_id=?",params![pid])?;
+                }
+                tx.execute("UPDATE sources SET working_document=? WHERE id=? AND project_id=?",
+                    params![if enable{1}else{0},sid,pid])?;
+                tx.commit()?;
+                Ok(json!(true))
             }
             "source_guidance" => {
                 let pid=required(&a,"project_id")?;
@@ -358,7 +385,7 @@ impl Store {
                     "SELECT f.id,f.title,f.perspective,f.principles,f.qualifications FROM project_frameworks pf JOIN belief_frameworks f ON f.id=pf.framework_id WHERE pf.project_id=? AND pf.active=1 AND f.status='Confirmed' AND f.deleted=0 ORDER BY f.perspective,f.title",
                     params![pid])?;
                 let sources=rows(&self.conn,
-                    "SELECT id,name,kind,role,use_guidance FROM sources WHERE project_id=? ORDER BY CASE role WHEN 'Primary Reference' THEN 0 WHEN 'Supporting' THEN 1 WHEN 'Critical Perspective' THEN 2 ELSE 3 END,created_at DESC LIMIT 250",
+                    "SELECT id,name,kind,role,use_guidance,working_document FROM sources WHERE project_id=? ORDER BY CASE role WHEN 'Primary Reference' THEN 0 WHEN 'Supporting' THEN 1 WHEN 'Critical Perspective' THEN 2 ELSE 3 END,created_at DESC LIMIT 250",
                     params![pid])?;
                 Ok(json!({"frameworks":frameworks,"sources":sources}))
             }
@@ -716,7 +743,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":7}
+            "path":self.root.to_string_lossy(),"schema":8}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);
