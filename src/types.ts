@@ -113,3 +113,30 @@ export type ChannelScriptReference = {
   channel_id: string; channel_name: string; section_id: string;
   section_title: string; excerpt: string;
 };
+
+export const cueStatuses = ["Draft", "Ready", "Recorded"] as const;
+export type ScriptCueDraft = {
+  heading: string;
+  narration: string;
+  visuals: string;
+  evidence_notes: string;
+  source_id: string | null;
+  source_locator: string;
+  planned_seconds: number | null;
+  status: (typeof cueStatuses)[number];
+  snapshot?: boolean;
+};
+export type ScriptCue = Omit<ScriptCueDraft,"snapshot"> & {
+  id: string;
+  project_id: string;
+  position: number;
+  version: number;
+  source_name?: string | null;
+  created_at: number;
+  updated_at: number;
+};
+export type ScriptCueRevision = {
+  id: string;
+  snapshot: string;
+  created_at: number;
+};

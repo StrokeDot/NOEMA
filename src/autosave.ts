@@ -1,19 +1,19 @@
 export type Draft = { html: string; text: string; snapshot?: boolean };
 // Serial writes and optimistic versions protect against slow writes and concurrent windows.
-export class Autosave {
-  private pending: Draft | null = null;
+export class Autosave<T extends object = Draft> {
+  private pending: T | null = null;
   private active: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   public error: unknown = null;
   constructor(
     private version: number,
     private persist: (
-      draft: Draft,
+      draft: T,
       version: number,
     ) => Promise<{ version: number }>,
     private status: (state: "pending" | "saving" | "saved" | "error") => void,
   ) {}
-  enqueue(draft: Draft) {
+  enqueue(draft: T) {
     this.pending = draft;
     this.status("pending");
     clearTimeout(this.timer);
