@@ -4,6 +4,7 @@ export type Project = {
   author: string;
   description: string;
   settings: string;
+  project_type: "Book" | "Video Script";
 };
 export type Chapter = {
   id: string;
@@ -76,3 +77,19 @@ export type BookGem = {
   updated_at: number;
 };
 export type GemDraft = Pick<BookGem,"chapter_id"|"kind"|"text"|"notes"|"origin"|"source_label"|"status"> & {id?:string};
+
+export const frameworkPerspectives = ["Author", "External", "Character", "Custom"] as const;
+export const frameworkStatuses = ["Draft", "Confirmed"] as const;
+export type CoreFramework = {
+  id: string;
+  title: string;
+  perspective: (typeof frameworkPerspectives)[number];
+  principles: string;
+  original_text: string;
+  qualifications: string;
+  source_label: string;
+  status: (typeof frameworkStatuses)[number];
+  active: number;
+  updated_at: number;
+};
+export type FrameworkDraft = Pick<CoreFramework, "title" | "perspective" | "principles" | "qualifications" | "source_label" | "status"> & { id?: string };
