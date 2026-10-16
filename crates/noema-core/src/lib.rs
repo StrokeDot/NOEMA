@@ -50,6 +50,13 @@ fn rows(conn: &Connection, sql: &str, p: impl rusqlite::Params) -> Result<Value>
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(json!(vals))
 }
+fn to_chapter_html(text:&str)->String {
+    text.split("\n\n").filter(|s|!s.trim().is_empty()).map(|paragraph|{
+        let plain=paragraph.trim().replace('&',"&amp;").replace('<',"&lt;")
+            .replace('>',"&gt;").replace('"',"&quot;").replace('\n',"<br>");
+        format!("<p>{plain}</p>")
+    }).collect::<Vec<_>>().join("")
+}
 pub struct Store {
     pub conn: Connection,
     pub root: PathBuf,
@@ -64,7 +71,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 6 {
+        if ver > 7 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -97,6 +104,11 @@ impl Store {
         if ver < 6 {
             let tx = conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v6_project_sources.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 7 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v7_project_chat.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -241,6 +253,89 @@ impl Store {
                 };
                 let sql = format!("SELECT id,name,kind,tags,role,use_guidance,created_at,warning FROM sources WHERE project_id=? AND (?='' OR kind=?) AND (instr(lower(name),lower(?))>0 OR instr(lower(tags),lower(?))>0) ORDER BY {order} LIMIT 50 OFFSET ?");
                 rows(&self.conn, &sql, params![required(&a,"project_id")?,string(&a,"kind"),string(&a,"kind"),string(&a,"filter"),string(&a,"filter"),offset(&a)])
+            }
+            "create_chapter_from_text" => {
+                let pid=required(&a,"project_id")?;
+                let title=required(&a,"title")?.trim();
+                let text=required(&a,"text")?;
+                if title.len()>500 || text.len()>2_000_000 {
+                    return Err("The proposed chapter exceeds the allowed length".into());
+                }
+                let project_exists:i64=self.conn.query_row("SELECT count(*) FROM projects WHERE id=?",[pid],|r|r.get(0))?;
+                if project_exists!=1 {return Err("Project not found".into());}
+                // Deliberately treat assistant prose as plain text, not injected HTML.
+                let html=to_chapter_html(text);
+                let cid=id();
+                self.conn.execute("INSERT INTO chapters(id,project_id,title,html,text,position,updated_at) VALUES(?,?,?,?,?,COALESCE((SELECT MAX(position)+1 FROM chapters WHERE project_id=?),0),?)",
+                    params![cid,pid,title,html,text,pid,now()])?;
+                Ok(json!({"id":cid}))
+            }
+            "create_chapter_from_source" => {
+                let pid=required(&a,"project_id")?;
+                let source=required(&a,"source_id")?;
+                let title=required(&a,"title")?.trim();
+                if title.len()>500 {return Err("Chapter title is too long".into());}
+                let mut stmt=self.conn.prepare("SELECT text FROM passages WHERE project_id=? AND source_id=? ORDER BY id")?;
+                let chunks:Vec<String>=stmt.query_map(params![pid,source],|r|r.get(0))?.collect::<std::result::Result<_,_>>()?;
+                if chunks.is_empty() {return Err("No readable source text in this project".into());}
+                let text=chunks.join("\n\n");
+                if text.len()>2_000_000 {return Err("The working document is too large for one chapter; split it first".into());}
+                let html=to_chapter_html(&text);
+                let cid=id();
+                self.conn.execute("INSERT INTO chapters(id,project_id,title,html,text,position,updated_at) VALUES(?,?,?,?,?,COALESCE((SELECT MAX(position)+1 FROM chapters WHERE project_id=?),0),?)",
+                    params![cid,pid,title,html,text,pid,now()])?;
+                Ok(json!({"id":cid}))
+            }
+            "chat_history" => rows(&self.conn,
+                "SELECT id,role,content,provider,created_at FROM project_chat_messages WHERE project_id=? ORDER BY created_at,id LIMIT 300",
+                params![required(&a,"project_id")?]),
+            "append_chat_message" => {
+                let pid=required(&a,"project_id")?;
+                let role=required(&a,"role")?;
+                if role!="user" && role!="assistant" {return Err("Invalid chat message author".into());}
+                let content=required(&a,"content")?.trim();
+                if content.len()>100_000 {return Err("Chat message is too long".into());}
+                let mid=id();
+                self.conn.execute(
+                    "INSERT INTO project_chat_messages(id,project_id,role,content,provider,created_at) VALUES(?,?,?,?,?,?)",
+                    params![mid,pid,role,content,string(&a,"provider"),now()])?;
+                Ok(json!({"id":mid}))
+            }
+            "chat_context" => {
+                let pid=required(&a,"project_id")?;
+                let query=string(&a,"query");
+                let terms:Vec<String>=query.split(|ch:char| !ch.is_alphanumeric())
+                    .filter(|word|word.chars().count()>=4)
+                    .take(12).map(|s|s.to_lowercase()).collect();
+                let meta=rows(&self.conn,
+                    "SELECT title,author,project_type,description FROM projects WHERE id=?",
+                    params![pid])?;
+                if meta.as_array().is_none_or(|items|items.is_empty()) {return Err("Project not found".into());}
+                let frameworks=rows(&self.conn,
+                    "SELECT f.title,f.perspective,substr(f.principles,1,6000) AS principles,substr(f.qualifications,1,2500) AS qualifications FROM project_frameworks pf JOIN belief_frameworks f ON f.id=pf.framework_id WHERE pf.project_id=? AND pf.active=1 AND f.status='Confirmed' AND f.deleted=0 ORDER BY f.perspective,f.title LIMIT 20",
+                    params![pid])?;
+                let positions=rows(&self.conn,
+                    "SELECT category,title,substr(body,1,2500) AS body FROM memories WHERE project_id=? AND category IN ('Established Positions','Writing Instructions') ORDER BY updated_at DESC LIMIT 30",
+                    params![pid])?;
+                let source_rows=rows(&self.conn,
+                    "SELECT p.id,s.id AS source_id,s.name,s.role,s.use_guidance,p.location,substr(p.text,1,2500) AS text FROM passages p JOIN sources s ON s.id=p.source_id WHERE p.project_id=? ORDER BY p.id DESC LIMIT 1500",
+                    params![pid])?;
+                let mut ranked:Vec<(usize,Value)>=source_rows.as_array().unwrap().iter().filter_map(|v|{
+                    let txt=v["text"].as_str().unwrap_or("").to_lowercase();
+                    let label=v["name"].as_str().unwrap_or("").to_lowercase();
+                    let score=terms.iter().filter(|word|txt.contains(word.as_str())||label.contains(word.as_str())).count();
+                    if score>0 {Some((score,v.clone()))} else {None}
+                }).collect();
+                ranked.sort_by(|a,b|b.0.cmp(&a.0));
+                let passages:Vec<Value>=ranked.into_iter().take(9).map(|(_,v)|v).collect();
+                let recent=rows(&self.conn,
+                    "SELECT role,substr(content,1,12000) AS content FROM (SELECT role,content,created_at,id FROM project_chat_messages WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 14) ORDER BY created_at,id",
+                    params![pid])?;
+                let chapters=rows(&self.conn,
+                    "SELECT id,title,substr(text,1,5000) AS text FROM chapters WHERE project_id=? AND deleted=0 ORDER BY updated_at DESC LIMIT 3",
+                    params![pid])?;
+                Ok(json!({"project":meta[0],"frameworks":frameworks,"established_positions":positions,
+                    "passages":passages,"recent_messages":recent,"recent_chapters":chapters}))
             }
             "source_guidance" => {
                 let pid=required(&a,"project_id")?;
@@ -621,7 +716,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":6}
+            "path":self.root.to_string_lossy(),"schema":7}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);
