@@ -103,8 +103,9 @@ pub fn prepare(root: &Path, path: &Path) -> Result<PreparedImport> {
             warning: String::new(),
         };
         if kind == "pdf" {
-            // Parse the bytes we have already read, avoiding a second file open on Windows.
-            let pages = pdf_extract::extract_text_from_mem_by_pages(&bytes).map_err(|e| {
+            // The original file has been fully written, synced and closed.
+            // Let the PDF extractor open the durable local copy by path.
+            let pages = pdf_extract::extract_text_by_pages(&original).map_err(|e| {
                 format!(
                     "PDF text extraction failed: {e}. Encrypted and scanned PDFs are unsupported."
                 )
