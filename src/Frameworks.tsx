@@ -52,6 +52,7 @@ export default function FrameworksView({
       if (!text.trim()) throw new Error("The selected text file is empty.");
       setEdit({
         ...empty(),
+        perspective: "Custom",
         title: file.name.replace(/\.(txt|md|markdown|json)$/i, ""),
         principles: text,
         source_label: file.name,
