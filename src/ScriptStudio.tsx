@@ -273,6 +273,20 @@ export default function ScriptStudio({
         <p>{cues.length} scenes · {allWords} spoken words · approximately {duration(estimated)} of narration</p>
       </div>
       <div className="framework-actions">
+        <button disabled={busy||!cues.length} onClick={()=>void withFlush(async()=>{
+          const content=cues.map((c,i)=>`${i+1}. ${c.heading}\n\n${c.narration}`).join("\n\n");
+          await navigator.clipboard.writeText(content);
+        })}>Copy full narration</button>
+        <button disabled={busy||!cues.length} onClick={()=>void withFlush(async()=>{
+          const content=cues.map((c,i)=>[
+            `## ${i+1}. ${c.heading}`,
+            `**Narration**\n${c.narration}`,
+            `**Visuals / footage**\n${c.visuals}`,
+            `**Source:** ${c.source_name||"Unlinked"}${c.source_locator?" · "+c.source_locator:""}`,
+            `**Evidence and editing notes**\n${c.evidence_notes}`,
+          ].join("\n\n")).join("\n\n---\n\n");
+          await navigator.clipboard.writeText(`# ${project.title}\n\n${content}`);
+        })}>Copy production script</button>
         <button onClick={()=>void withFlush(async()=>setPreview(true))} disabled={busy||!cues.length}>Production preview</button>
         <button className="primary" onClick={add} disabled={busy}>+ Add scene</button>
       </div>
