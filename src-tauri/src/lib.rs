@@ -1,4 +1,5 @@
 mod private_updates;
+mod ai_chat;
 use noema_core::Store;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -77,6 +78,10 @@ pub fn run() {
             private_updates::update_disconnect,
             private_updates::update_check,
             private_updates::update_install,
+            ai_chat::ai_status,
+            ai_chat::ai_configure,
+            ai_chat::ai_disconnect,
+            ai_chat::ai_reply,
         ])
         .run(tauri::generate_context!())
         .expect("Unable to start NOEMA; check your data-folder permissions");
