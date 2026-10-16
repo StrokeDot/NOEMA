@@ -199,3 +199,13 @@ Verified installer: [download the Windows artifact](https://github.com/StrokeDot
 ## Version 0.1.1
 
 Book projects and YouTube scripts now have separate setup, navigation, and project lists. See [workspaces and update behavior](docs/WORKSPACES_AND_UPDATES.md). Settings includes a private update-download shortcut; automatic in-app installation is not configured. Run the newer installer over the existing installation without uninstalling.
+
+## AI chat beside the manuscript — NOEMA 0.1.3
+
+Open **AI chat** in a book or video script to discuss your writing beside the working editor. Messages are stored inside that project. Configure either an **OpenAI API key** (separately billed from a ChatGPT subscription, stored in Windows Credential Manager) or an **Ollama local model**. NOEMA does not transfer your existing ChatGPT sessions or Plus entitlement; import ChatGPT conversation exports into project sources instead.
+
+NOEMA retrieves selected confirmed author frameworks, established positions, recent chapter text, the designated working draft, and relevant excerpts from the current project's research. External sources remain explicitly attributed to their source. Source texts are untrusted reference material. You must **approve** chapter creation or replacement; it does not silently modify a manuscript.
+
+**New imports:** Microsoft Word DOCX and DRM-free EPUB alongside PDF, TXT, Markdown and ChatGPT JSON exports. Export Google Docs as DOCX for import. Source originals remain saved separately from extracted text. EPUB media, DOCX tracked changes/comments and scanned PDF OCR are not supported yet. The source list now supports **Use as working draft** and **Create chapter** from an imported source. Protected ebooks and legacy binary DOC files cannot be imported.
+
+No API model or local LLM is automatically downloaded, and provider answers should be verified before use as evidence. There are no direct Google Docs edits, realtime voice calls, or multi-step autonomous editing agents in this version.

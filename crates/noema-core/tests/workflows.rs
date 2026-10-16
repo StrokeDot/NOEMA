@@ -284,7 +284,7 @@ fn backup_reopens_and_migration_is_repeatable() {
         b.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        6
+        8
     );
 }
 #[test]
@@ -355,7 +355,7 @@ fn book_gems_persist_preserve_original_and_isolate_books() {
     assert_eq!(gem[0]["origin"],"AI Assistant");
     assert_eq!(gem[0]["source_label"],"Conversation 12");
     assert_eq!(gem[0]["status"],"Approved");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),6);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),8);
     call(&mut store,"delete_gem",json!({"project_id":a,"id":id}));
     assert_eq!(call(&mut store,"gems",json!({"project_id":a})),json!([]));
     assert_eq!(store.conn.query_row("SELECT count(*) FROM book_gems WHERE id=?",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
@@ -368,7 +368,7 @@ fn book_gem_migration_from_v1_preserves_existing_memories() {
     let p=project(&mut s,"An existing book");
     let mid=call(&mut s,"save_memory",json!({"project_id":p,"category":"Writing Instructions","title":"Style","body":"Keep original voice"}))["id"].as_str().unwrap().to_string();
     // Simulate a v0.1 database missing the gems table but retaining manuscripts/memory.
-    s.conn.execute_batch("ALTER TABLE sources DROP COLUMN use_guidance; ALTER TABLE sources DROP COLUMN role; DROP TABLE script_cue_revisions; DROP TABLE script_cues; DROP INDEX projects_channel; ALTER TABLE projects DROP COLUMN script_status; ALTER TABLE projects DROP COLUMN channel_id; DROP TABLE channel_profiles; DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
+    s.conn.execute_batch("DROP INDEX source_working_project; ALTER TABLE sources DROP COLUMN working_document; DROP TABLE project_chat_messages; ALTER TABLE sources DROP COLUMN use_guidance; ALTER TABLE sources DROP COLUMN role; DROP TABLE script_cue_revisions; DROP TABLE script_cues; DROP INDEX projects_channel; ALTER TABLE projects DROP COLUMN script_status; ALTER TABLE projects DROP COLUMN channel_id; DROP TABLE channel_profiles; DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
     drop(s);
     let mut s=Store::open(d.path()).unwrap();
     let memories=call(&mut s,"memories",json!({"project_id":p}));
@@ -426,7 +426,7 @@ fn scripts_and_reusable_frameworks_respect_project_activation() {
         "perspective":"External","principles":"Different premises","status":"Draft"}));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})),json!([]));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":book})),json!([]));
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),6);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),8);
 }
 
 #[test]
@@ -484,7 +484,7 @@ fn channel_profiles_group_scripts_and_references_respect_opt_in() {
     let mut reopened=Store::open(dir.path()).unwrap();
     assert_eq!(call(&mut reopened,"channel_scripts",json!({"channel_id":channel_b}))[0]["script_status"],"Published");
     assert_eq!(call(&mut reopened,"channels",json!({})).as_array().unwrap().len(),2);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),6);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),8);
 }
 #[test]
 fn legacy_script_migrates_without_losing_its_manuscript() {
@@ -545,7 +545,7 @@ fn video_cues_preserve_separate_narration_visuals_sources_and_revisions() {
     assert_eq!(cue["visuals"],"Slow close-up on Arthur");
     assert_eq!(cue["source_locator"],"RDR2 bench scene");
     assert_eq!(cue["planned_seconds"],15);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),6);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),8);
     call(&mut reopened,"delete_script_cue",json!({"project_id":script,"id":cid}));
     assert_eq!(call(&mut reopened,"script_cues",json!({"project_id":script})).as_array().unwrap().len(),1);
     let retained:i64=reopened.conn.query_row("SELECT count(*) FROM script_cues WHERE id=?",[cid],|r|r.get(0)).unwrap();
