@@ -64,7 +64,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 5 {
+        if ver > 6 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -92,6 +92,11 @@ impl Store {
         if ver < 5 {
             let tx = conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v5_script_cues.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 6 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v6_project_sources.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -234,8 +239,33 @@ impl Store {
                     "type" => "kind,name COLLATE NOCASE,id",
                     _ => "created_at DESC,id",
                 };
-                let sql = format!("SELECT id,name,kind,tags,created_at,warning FROM sources WHERE project_id=? AND (?='' OR kind=?) AND (instr(lower(name),lower(?))>0 OR instr(lower(tags),lower(?))>0) ORDER BY {order} LIMIT 50 OFFSET ?");
+                let sql = format!("SELECT id,name,kind,tags,role,use_guidance,created_at,warning FROM sources WHERE project_id=? AND (?='' OR kind=?) AND (instr(lower(name),lower(?))>0 OR instr(lower(tags),lower(?))>0) ORDER BY {order} LIMIT 50 OFFSET ?");
                 rows(&self.conn, &sql, params![required(&a,"project_id")?,string(&a,"kind"),string(&a,"kind"),string(&a,"filter"),string(&a,"filter"),offset(&a)])
+            }
+            "source_guidance" => {
+                let pid=required(&a,"project_id")?;
+                let sid=required(&a,"id")?;
+                let role=required(&a,"role")?;
+                if !["Supporting","Primary Reference","Critical Perspective","Background"].contains(&role) {
+                    return Err("Invalid source role".into());
+                }
+                let guidance=string(&a,"use_guidance");
+                if guidance.len()>20_000 {return Err("Source guidance exceeds length limit".into());}
+                let changed=self.conn.execute(
+                    "UPDATE sources SET role=?,use_guidance=? WHERE id=? AND project_id=?",
+                    params![role,guidance,sid,pid])?;
+                if changed!=1 {return Err("Source does not belong to this project".into());}
+                Ok(json!(true))
+            }
+            "project_writing_context" => {
+                let pid=required(&a,"project_id")?;
+                let frameworks=rows(&self.conn,
+                    "SELECT f.id,f.title,f.perspective,f.principles,f.qualifications FROM project_frameworks pf JOIN belief_frameworks f ON f.id=pf.framework_id WHERE pf.project_id=? AND pf.active=1 AND f.status='Confirmed' AND f.deleted=0 ORDER BY f.perspective,f.title",
+                    params![pid])?;
+                let sources=rows(&self.conn,
+                    "SELECT id,name,kind,role,use_guidance FROM sources WHERE project_id=? ORDER BY CASE role WHEN 'Primary Reference' THEN 0 WHEN 'Supporting' THEN 1 WHEN 'Critical Perspective' THEN 2 ELSE 3 END,created_at DESC LIMIT 250",
+                    params![pid])?;
+                Ok(json!({"frameworks":frameworks,"sources":sources}))
             }
             "source_tags" => {
                 self.conn.execute(
@@ -591,7 +621,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":5}
+            "path":self.root.to_string_lossy(),"schema":6}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);
