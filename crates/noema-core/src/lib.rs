@@ -370,6 +370,11 @@ impl Store {
                         params![id,title,perspective,principles,principles,string(&a,"qualifications"),string(&a,"source_label"),status,now(),now()])?
                 };
                 if changed != 1 { return Err("Framework not found".into()); }
+                if status == "Draft" {
+                    self.conn.execute(
+                        "UPDATE project_frameworks SET active=0 WHERE framework_id=?",
+                        params![id])?;
+                }
                 Ok(json!({"id":id}))
             }
             "set_framework_active" => {
