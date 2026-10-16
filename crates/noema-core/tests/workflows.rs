@@ -272,7 +272,7 @@ fn backup_reopens_and_migration_is_repeatable() {
         b.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        4
+        5
     );
 }
 #[test]
@@ -343,7 +343,7 @@ fn book_gems_persist_preserve_original_and_isolate_books() {
     assert_eq!(gem[0]["origin"],"AI Assistant");
     assert_eq!(gem[0]["source_label"],"Conversation 12");
     assert_eq!(gem[0]["status"],"Approved");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),4);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),5);
     call(&mut store,"delete_gem",json!({"project_id":a,"id":id}));
     assert_eq!(call(&mut store,"gems",json!({"project_id":a})),json!([]));
     assert_eq!(store.conn.query_row("SELECT count(*) FROM book_gems WHERE id=?",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
@@ -356,7 +356,7 @@ fn book_gem_migration_from_v1_preserves_existing_memories() {
     let p=project(&mut s,"An existing book");
     let mid=call(&mut s,"save_memory",json!({"project_id":p,"category":"Writing Instructions","title":"Style","body":"Keep original voice"}))["id"].as_str().unwrap().to_string();
     // Simulate a v0.1 database missing the gems table but retaining manuscripts/memory.
-    s.conn.execute_batch("DROP INDEX projects_channel; ALTER TABLE projects DROP COLUMN script_status; ALTER TABLE projects DROP COLUMN channel_id; DROP TABLE channel_profiles; DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
+    s.conn.execute_batch("DROP TABLE script_cue_revisions; DROP TABLE script_cues; DROP INDEX projects_channel; ALTER TABLE projects DROP COLUMN script_status; ALTER TABLE projects DROP COLUMN channel_id; DROP TABLE channel_profiles; DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
     drop(s);
     let mut s=Store::open(d.path()).unwrap();
     let memories=call(&mut s,"memories",json!({"project_id":p}));
@@ -482,4 +482,54 @@ fn legacy_script_migrates_without_losing_its_manuscript() {
     call(&mut s,"update_project",json!({"project_id":pid,"title":"Legacy video","author":"Writer",
         "project_type":"Video Script","channel_id":ch,"script_status":"In Production","settings":{}}));
     assert_eq!(call(&mut s,"chapter",json!({"project_id":pid,"id":chapter_id}))["text"],"Keep me");
+}
+
+#[test]
+fn video_cues_preserve_separate_narration_visuals_sources_and_revisions() {
+    let dir=tempfile::tempdir().unwrap();
+    let mut s=Store::open(dir.path()).unwrap();
+    let book=project(&mut s,"A book");
+    assert!(s.request("create_script_cue",json!({"project_id":book})).is_err());
+    let script=call(&mut s,"create_project",json!({"title":"Arthur video","author":"Writer",
+        "project_type":"Video Script"}))["id"].as_str().unwrap().to_string();
+    let cid=call(&mut s,"create_script_cue",json!({"project_id":script,"heading":"Opening"}))["id"]
+        .as_str().unwrap().to_string();
+    let other=call(&mut s,"create_project",json!({"title":"Other","author":"Writer",
+        "project_type":"Video Script"}))["id"].as_str().unwrap().to_string();
+    let unrelated=call(&mut s,"create_script_cue",json!({"project_id":other,"heading":"Separate"}))["id"]
+        .as_str().unwrap().to_string();
+    assert_eq!(call(&mut s,"script_cues",json!({"project_id":other})).as_array().unwrap().len(),1);
+    let first=call(&mut s,"save_script_cue",json!({
+        "project_id":script,"id":cid,"version":0,"heading":"Opening",
+        "narration":"Arthur seeks redemption.","visuals":"Slow close-up on Arthur",
+        "evidence_notes":"Review scene source before publishing",
+        "source_locator":"RDR2 bench scene",
+        "planned_seconds":15,"status":"Draft","snapshot":true
+    }));
+    assert_eq!(first["version"],1);
+    assert!(s.request("save_script_cue",json!({"project_id":script,"id":cid,"version":0,
+        "status":"Ready"})).is_err());
+    assert!(s.request("save_script_cue",json!({"project_id":other,"id":cid,"version":1,
+        "status":"Ready"})).is_err());
+    assert!(s.request("save_script_cue",json!({"project_id":script,"id":cid,"version":1,
+        "source_id":"not-a-source","status":"Ready"})).is_err());
+    let second=call(&mut s,"create_script_cue",json!({"project_id":script,"heading":"Finale"}))["id"]
+        .as_str().unwrap().to_string();
+    assert!(s.request("reorder_script_cues",json!({"project_id":script,"ids":[cid,cid]})).is_err());
+    assert!(s.request("reorder_script_cues",json!({"project_id":script,"ids":[cid,unrelated]})).is_err());
+    call(&mut s,"reorder_script_cues",json!({"project_id":script,"ids":[second,cid]}));
+    assert_eq!(call(&mut s,"script_cues",json!({"project_id":script}))[0]["heading"],"Finale");
+    assert_eq!(call(&mut s,"script_cue_history",json!({"project_id":script,"id":cid})).as_array().unwrap().len(),1);
+    drop(s);
+    let mut reopened=Store::open(dir.path()).unwrap();
+    let cue=call(&mut reopened,"script_cues",json!({"project_id":script}))[1].clone();
+    assert_eq!(cue["narration"],"Arthur seeks redemption.");
+    assert_eq!(cue["visuals"],"Slow close-up on Arthur");
+    assert_eq!(cue["source_locator"],"RDR2 bench scene");
+    assert_eq!(cue["planned_seconds"],15);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),5);
+    call(&mut reopened,"delete_script_cue",json!({"project_id":script,"id":cid}));
+    assert_eq!(call(&mut reopened,"script_cues",json!({"project_id":script})).as_array().unwrap().len(),1);
+    let retained:i64=reopened.conn.query_row("SELECT count(*) FROM script_cues WHERE id=?",[cid],|r|r.get(0)).unwrap();
+    assert_eq!(retained,1);
 }

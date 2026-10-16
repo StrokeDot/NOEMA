@@ -64,7 +64,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 4 {
+        if ver > 5 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -87,6 +87,11 @@ impl Store {
         if ver < 4 {
             let tx = conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v4_channels.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 5 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v5_script_cues.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -360,6 +365,106 @@ impl Store {
                 if affected == 0 { return Err("Gem not found in this book".into()); }
                 Ok(json!(true))
             }
+            "script_cues" => {
+                let pid=required(&a,"project_id")?;
+                rows(&self.conn,
+                    "SELECT c.*,s.name AS source_name FROM script_cues c LEFT JOIN sources s ON s.id=c.source_id WHERE c.project_id=? AND c.deleted=0 ORDER BY c.position,c.id",
+                    params![pid])
+            }
+            "create_script_cue" => {
+                let pid=required(&a,"project_id")?;
+                let kind: String=self.conn.query_row("SELECT project_type FROM projects WHERE id=?", [pid], |r|r.get(0))?;
+                if kind!="Video Script" {return Err("Production cues require a video-script project".into());}
+                let next:i64=self.conn.query_row(
+                    "SELECT COALESCE(MAX(position)+1,0) FROM script_cues WHERE project_id=? AND deleted=0",
+                    [pid],|r|r.get(0))?;
+                let cid=id();
+                self.conn.execute(
+                    "INSERT INTO script_cues(id,project_id,position,heading,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                    params![cid,pid,next,string(&a,"heading"),now(),now()])?;
+                let result=rows(&self.conn,"SELECT * FROM script_cues WHERE id=?",params![cid])?;
+                Ok(result[0].clone())
+            }
+            "save_script_cue" => {
+                let pid=required(&a,"project_id")?;
+                let cid=required(&a,"id")?;
+                let expected=a["version"].as_i64().ok_or("Missing cue version")?;
+                let heading=string(&a,"heading");
+                let narration=string(&a,"narration");
+                let visuals=string(&a,"visuals");
+                let evidence=string(&a,"evidence_notes");
+                let location=string(&a,"source_locator");
+                for value in [heading,narration,visuals,evidence,location] {
+                    if value.len()>200_000 {return Err("Script field is too long".into());}
+                }
+                let status=required(&a,"status")?;
+                if !["Draft","Ready","Recorded"].contains(&status) {return Err("Invalid cue status".into());}
+                let duration=match a.get("planned_seconds") {
+                    None | Some(Value::Null) => None,
+                    Some(x)=> {
+                        let seconds=x.as_i64().ok_or("Planned time must be in whole seconds")?;
+                        if !(0..=14400).contains(&seconds) {return Err("Planned time must be between 0 and 14400 seconds".into());}
+                        Some(seconds)
+                    }
+                };
+                let source=a["source_id"].as_str().filter(|v|!v.is_empty());
+                if let Some(sid)=source {
+                    let found:i64=self.conn.query_row("SELECT count(*) FROM sources WHERE id=? AND project_id=?",
+                        params![sid,pid],|r|r.get(0))?;
+                    if found!=1 {return Err("Referenced source must belong to this script".into());}
+                }
+                let tx=self.conn.transaction()?;
+                let existing=rows(&tx,
+                    "SELECT heading,narration,visuals,evidence_notes,source_id,source_locator,planned_seconds,status,version FROM script_cues WHERE id=? AND project_id=? AND deleted=0",
+                    params![cid,pid])?;
+                let previous=existing.as_array().and_then(|items|items.first()).ok_or("Script cue not found")?;
+                let version=previous["version"].as_i64().ok_or("Invalid stored cue version")?;
+                if version!=expected {return Err("This cue changed elsewhere. Your new wording has not been overwritten; copy it before reloading.".into());}
+                let updated=json!({"heading":heading,"narration":narration,"visuals":visuals,
+                    "evidence_notes":evidence,"source_id":source,"source_locator":location,
+                    "planned_seconds":duration,"status":status});
+                let unchanged=updated.as_object().unwrap().iter().all(|(key,value)|previous[key]==*value);
+                if unchanged {return Ok(json!({"version":version}));}
+                let last:i64=tx.query_row(
+                    "SELECT COALESCE(MAX(created_at),0) FROM script_cue_revisions WHERE cue_id=?",
+                    [cid],|r|r.get(0))?;
+                if now()-last>=60_000 || a["snapshot"].as_bool().unwrap_or(false) {
+                    tx.execute("INSERT INTO script_cue_revisions(id,cue_id,snapshot,created_at) VALUES(?,?,?,?)",
+                        params![id(),cid,previous.to_string(),now()])?;
+                }
+                tx.execute(
+                    "UPDATE script_cues SET heading=?,narration=?,visuals=?,evidence_notes=?,source_id=?,source_locator=?,planned_seconds=?,status=?,version=version+1,updated_at=? WHERE id=? AND project_id=?",
+                    params![heading,narration,visuals,evidence,source,location,duration,status,now(),cid,pid])?;
+                tx.commit()?;
+                Ok(json!({"version":version+1}))
+            }
+            "script_cue_history" => {
+                rows(&self.conn,
+                    "SELECT r.id,r.snapshot,r.created_at FROM script_cue_revisions r JOIN script_cues c ON c.id=r.cue_id WHERE c.id=? AND c.project_id=? ORDER BY r.created_at DESC LIMIT 80",
+                    params![required(&a,"id")?,required(&a,"project_id")?])
+            }
+            "reorder_script_cues" => {
+                let pid=required(&a,"project_id")?;
+                let ids=a["ids"].as_array().ok_or("Expected ordered cue IDs")?;
+                let current=rows(&self.conn,"SELECT id FROM script_cues WHERE project_id=? AND deleted=0",params![pid])?;
+                let mut expected:Vec<String>=current.as_array().unwrap().iter().filter_map(|x|x["id"].as_str().map(str::to_string)).collect();
+                let mut incoming:Vec<String>=ids.iter().map(|x|x.as_str().ok_or("Invalid cue ID").map(str::to_string)).collect::<Result<Vec<_>>>()?;
+                expected.sort();incoming.sort();
+                if incoming!=expected {return Err("Cue order must contain each active cue exactly once".into());}
+                let tx=self.conn.transaction()?;
+                for (i,cid) in ids.iter().enumerate() {
+                    tx.execute("UPDATE script_cues SET position=? WHERE id=? AND project_id=?",
+                        params![i as i64,cid.as_str(),pid])?;
+                }
+                tx.commit()?;
+                Ok(json!(true))
+            }
+            "delete_script_cue" => {
+                let n=self.conn.execute("UPDATE script_cues SET deleted=1,updated_at=? WHERE id=? AND project_id=? AND deleted=0",
+                    params![now(),required(&a,"id")?,required(&a,"project_id")?])?;
+                if n!=1 {return Err("Script cue not found".into());}
+                Ok(json!(true))
+            }
             "channels" => rows(&self.conn,
                 "SELECT ch.*, (SELECT count(*) FROM projects p WHERE p.channel_id=ch.id AND p.project_type='Video Script') AS script_count FROM channel_profiles ch ORDER BY ch.name COLLATE NOCASE,ch.id",
                 []),
@@ -474,7 +579,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":4}
+            "path":self.root.to_string_lossy(),"schema":5}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);
