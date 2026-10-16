@@ -32,12 +32,13 @@ async function launch(executable) {
   app = spawn(executable, [], { stdio: 'inherit', env: { ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9222' } });
   app.on('error', e => console.error(e));
+  let connectionError;
   for (let i = 0; i < 120; i++) {
     if (app.exitCode !== null) throw new Error(`App exited during startup: ${app.exitCode}`);
     try { browser = await chromium.connectOverCDP('http://127.0.0.1:9222', { timeout: 1000 }); break; }
-    catch { await pause(500); }
+    catch (error) { connectionError = String(error); await pause(500); }
   }
-  if (!browser) throw new Error('Installed WebView2 did not expose a test connection.');
+  if (!browser) throw new Error(`Installed WebView2 did not expose a test connection: ${connectionError}`);
   let page;
   for (let i = 0; i < 60; i++) {
     page = browser.contexts().flatMap(c => c.pages()).find(p => /tauri\.localhost|tauri:/.test(p.url()));
@@ -61,6 +62,9 @@ try {
   if (executables.length !== 1) throw new Error('Installer did not create noema.exe.');
   report.installed = true;
   const executable = join(installDir, executables[0]);
+  // WebView2 also supports an application-specific registry override. Some
+  // runtime versions ignore the environment value when the host supplies args.
+  await run('reg.exe', ['add', 'HKCU\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments', '/v', 'noema.exe', '/t', 'REG_SZ', '/d', '--remote-debugging-port=9222', '/f']);
   let page = await launch(executable);
   const modal = page.getByRole('dialog', { name: 'New writing project' });
   if (!(await modal.isVisible())) await page.getByRole('button', { name: '+ New writing project' }).click();
