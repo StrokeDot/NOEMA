@@ -9,7 +9,7 @@ use reqwest::{Client, StatusCode};
 use semver::Version;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, io::Read, path::PathBuf, process::Command, time::Duration};
+use std::{fs, io::Read, process::Command, time::Duration};
 use tauri::Manager;
 
 const OWNER_REPO: &str = "StrokeDot/NOEMA";
@@ -80,8 +80,9 @@ async fn discover(client: &Client, token: &str, current: &str) -> Result<Option<
             if item["workflow_run"]["id"].as_u64()!=Some(run_id) {continue;}
             let Some(ver)=metadata_version(current,item) else {continue;};
             if best.as_ref().is_none_or(|(found,_)|&ver>found) {
+                let version_label=ver.to_string();
                 best=Some((ver,json!({
-                    "available":true,"version":ver.to_string(),"installed":current,
+                    "available":true,"version":version_label,"installed":current,
                     "run_id":run_id,"artifact_id":item["id"],"digest":item["digest"],
                     "name":item["name"],"url":run["html_url"]
                 })));
