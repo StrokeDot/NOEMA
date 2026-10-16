@@ -1144,3 +1144,15 @@ main {
 .source-role{display:inline-block;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:2px 9px;}
 .attach-source-button{white-space:nowrap;}
 @media(max-width:740px){.attach-source-button{font-size:11px;padding:6px 8px;}}
+
+/* Private GitHub updates, always explicit and user-approved. */
+.noema-updater {padding-top:16px;}
+.noema-updater .updater-auth,.noema-updater .updater-connected {
+ border:1px solid var(--line);border-radius:10px;background:var(--panel);
+ padding:18px 20px;margin:18px 0;
+}
+.noema-updater code{margin:0 5px;font-size:12px;}
+.noema-updater p{line-height:1.6;}
+.noema-updater input[type=password]{display:block;width:100%;margin:9px 0 14px;}
+.noema-updater .updater-available{border-top:1px solid var(--line);padding-top:15px;margin-top:15px;}
+.noema-updater .local-dot{display:inline-block;margin-right:8px;}

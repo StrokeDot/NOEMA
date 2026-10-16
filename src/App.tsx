@@ -7,6 +7,7 @@ import { request, errorText } from "./api";
 import type { Project, Chapter, Document, Source } from "./types";
 import Manuscript from "./Editor";
 import ScriptStudio from "./ScriptStudio";
+import Updates from "./Updates";
 import Research, { Search, SourceReader } from "./Research";
 import MemoryView from "./Memory";
 import GemsView from "./Gems";
@@ -404,7 +405,7 @@ export default function App() {
           </>}
           <div className="nav-footer">
             <span className="local-dot" />
-            Local & private<span>Version 0.1.1</span>
+            Local & private<span>Version 0.1.2</span>
           </div>
         </aside>
       )}
@@ -550,6 +551,7 @@ export default function App() {
                 theme={theme}
                 setTheme={setTheme}
                 onError={report}
+                beforeInstall={async()=>await flushRef.current()}
                 onUpdated={async () => {
                   const ps = await request<Project[]>("projects");
                   setProjects(ps);
@@ -860,6 +862,7 @@ function Settings({
   setTheme,
   onError,
   onUpdated,
+  beforeInstall,
 }: {
   project: Project;
   channels: ChannelProfile[];
@@ -867,6 +870,7 @@ function Settings({
   setTheme: (s: string) => void;
   onError: (s: string) => void;
   onUpdated: () => Promise<void>;
+  beforeInstall: () => Promise<void>;
 }) {
   const [title, setTitle] = useState(project.title);
   const [author, setAuthor] = useState(project.author);
@@ -994,23 +998,7 @@ function Settings({
           Create complete backup
         </button>
       </section>
-      <section>
-        <h2>NOEMA 0.1.1 · Updates</h2>
-        <p>Update this installation without uninstalling NOEMA. Your local archive is kept separately.</p>
-        <p>Automatic downloading is not configured yet. Update downloads open your private GitHub repository in your browser.</p>
-        <button onClick={async () => {
-          try {
-            if (isTauri()) await invoke("open_update_downloads");
-            else window.open("https://github.com/StrokeDot/NOEMA/actions/workflows/windows.yml", "_blank", "noopener,noreferrer");
-            setNote("Download the newest successful Windows installer, close NOEMA, and run it to update this installation. No uninstall is needed.");
-          } catch (e) { onError(errorText(e)); }
-        }}>Open update downloads</button>
-        <p>Where Thought Becomes Legacy.</p>
-        <p>
-          AI connections, Android packaging, EPUB, and PDF export are planned
-          for later versions.
-        </p>
-      </section>
+      <Updates onError={onError} beforeInstall={beforeInstall} />
       {note && (
         <p role="status" className="notice">
           {note}
