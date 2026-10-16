@@ -329,9 +329,14 @@ export default function Research({
         <h2>Author mindset + supporting material</h2>
         <p><strong>Author mindset:</strong> confirmed frameworks selected for this project. These guide your
           intended voice and assumptions; NOEMA never treats imported books as your personal beliefs.</p>
-        {frameworks.length ? <div className="source-framework-chips">
-          {frameworks.map(f=><span key={f.id} className="badge">{f.title} · {f.perspective}</span>)}
-        </div> : <p className="muted">No confirmed frameworks activated yet. Select them in Core frameworks.</p>}
+        {frameworks.some(f=>f.perspective==="Author") ? <div className="source-framework-chips">
+          {frameworks.filter(f=>f.perspective==="Author").map(f=><span key={f.id} className="badge">{f.title} · Author</span>)}
+        </div> : <p className="muted">No confirmed author framework is active. Choose one in Core frameworks.</p>}
+        {frameworks.some(f=>f.perspective!=="Author") && <div>
+          <strong>Other perspectives for comparison:</strong>
+          <div className="source-framework-chips">{frameworks.filter(f=>f.perspective!=="Author")
+            .map(f=><span key={f.id} className="badge">{f.title} · {f.perspective}</span>)}</div>
+        </div>}
         <p><strong>Research sources:</strong> attach primary texts, supporting books, critical perspectives,
           and background references for this project. The AI connection is still being developed.</p>
       </section>}
