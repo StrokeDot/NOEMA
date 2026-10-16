@@ -1135,3 +1135,12 @@ main {
 .project-type-cards strong { display:block; font:24px Georgia,serif; margin-bottom:14px; }
 .project-type-cards span { color:var(--muted); line-height:1.7; }
 @media(max-width:650px) { .project-type-cards { grid-template-columns:1fr; } }
+
+/* Project-scoped research that works alongside the author's approved mindset. */
+.source-foundation{border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:20px 0;background:var(--panel);}
+.source-foundation h2{margin:7px 0 12px;}
+.source-foundation p{font-size:13px;line-height:1.6;}
+.source-framework-chips{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 16px;}
+.source-role{display:inline-block;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:2px 9px;}
+.attach-source-button{white-space:nowrap;}
+@media(max-width:740px){.attach-source-button{font-size:11px;padding:6px 8px;}}

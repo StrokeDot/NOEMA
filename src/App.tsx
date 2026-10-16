@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { save } from "@tauri-apps/plugin-dialog";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import DOMPurify from "dompurify";
 import { request, errorText } from "./api";
 import type { Project, Chapter, Document, Source } from "./types";
@@ -154,6 +154,26 @@ export default function App() {
       }
       setNav(false);
     });
+  async function attachWritingSources() {
+    if (!project) return;
+    try {
+      const selected = import.meta.env.DEV && import.meta.env.VITE_NOEMA_TEST_BRIDGE==="1"
+        ? (window as unknown as {__NOEMA_TEST_FILES__?:string[]}).__NOEMA_TEST_FILES__??[]
+        : await open({multiple:true,filters:[{name:"Book and script research",extensions:["txt","md","markdown","json","pdf"]}]});
+      if (!selected) return;
+      const files=Array.isArray(selected)?selected:[selected];
+      if (!files.length)return;
+      await action(async()=>{
+        const failed:string[]=[];
+        for(const path of files){
+          try{await request("import",{project_id:project.id,path})}
+          catch(e){failed.push(path.split(/[\\/]/).pop()+": "+errorText(e))}
+        }
+        setView("Research");
+        if(failed.length)report(failed.join("\n"));
+      });
+    } catch(e){report(errorText(e))}
+  }
   async function reloadChapters() {
     if (project)
       setChapters(await request("chapters", { project_id: project.id }));
@@ -215,7 +235,7 @@ export default function App() {
   if (isScript) workspaceViews.splice(1, 0, "Write", "Preview");
   const viewLabel = (v: View) => ({
     "Script Studio": "Video script studio", Write: isScript ? "Freeform draft" : "Manuscript",
-    Research: isScript ? "Script research" : "Research",
+    Research: isScript ? "Script sources" : "Book sources",
     Conversations: isScript ? "Script conversations" : "Conversations",
     Memory: isScript ? "Script memory" : "Project memory", Frameworks: "Core frameworks",
     Channels: "Channel profiles", Gems: isScript ? "Script gems" : "Writing gems",
@@ -402,6 +422,9 @@ export default function App() {
             <span> / {viewLabel(view)}</span>
           </div>
           <div className="top-actions">
+            {project && <button className="attach-source-button" title="Attach books and supporting sources to this writing project" onClick={()=>void attachWritingSources()}>
+              + Attach sources
+            </button>}
             {project && <button title="Save a passage to Writing Gems" onClick={() => {
               const selected = window.getSelection()?.toString().trim() ?? "";
               setCaptureGem({

@@ -239,6 +239,10 @@ export default function Research({
   const [note, setNote] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [frameworks, setFrameworks] = useState<{id:string;title:string;perspective:string;principles:string}[]>([]);
+  const [sourceEdit, setSourceEdit] = useState<Source | null>(null);
+  const [role, setRole] = useState("Supporting");
+  const [guidance, setGuidance] = useState("");
   useEffect(() => {
     let live = true;
     setLoading(true);
@@ -260,6 +264,14 @@ export default function Research({
       live = false;
     };
   }, [project, page, refresh, onError, conversations, sort, filter]);
+  useEffect(() => {
+    let live=true;
+    request<{frameworks:typeof frameworks}>("project_writing_context",{project_id:project})
+      .then(v=>{if(live)setFrameworks(v.frameworks)})
+      .catch(e=>{if(live)onError(errorText(e))});
+    return ()=>{live=false};
+  },[project,refresh,onError]);
+
   async function importFiles() {
     try {
       const selected =
@@ -305,16 +317,27 @@ export default function Research({
       <div className="view-heading">
         <div>
           <div className="eyebrow">A LIBRARY OF YOUR OWN</div>
-          <h1>{conversations ? (script ? "Script conversations" : "Conversations") : (script ? "Script research" : "Research library")}</h1>
+          <h1>{conversations ? (script ? "Script conversations" : "Conversations") : (script ? "Script sources" : "Book sources")}</h1>
           <p>Keep the source. Find the idea. Build on what you know.</p>
         </div>
         <button className="primary" disabled={busy} onClick={importFiles}>
-          {busy ? "Importing…" : "+ Import files"}
+          {busy ? "Attaching…" : "+ Attach source files"}
         </button>
       </div>
+      {!conversations && <section className="source-foundation" aria-label="Writing foundations">
+        <div className="eyebrow">YOUR TWO KNOWLEDGE LAYERS</div>
+        <h2>Author mindset + supporting material</h2>
+        <p><strong>Author mindset:</strong> confirmed frameworks selected for this project. These guide your
+          intended voice and assumptions; NOEMA never treats imported books as your personal beliefs.</p>
+        {frameworks.length ? <div className="source-framework-chips">
+          {frameworks.map(f=><span key={f.id} className="badge">{f.title} · {f.perspective}</span>)}
+        </div> : <p className="muted">No confirmed frameworks activated yet. Select them in Core frameworks.</p>}
+        <p><strong>Research sources:</strong> attach primary texts, supporting books, critical perspectives,
+          and background references for this project. The AI connection is still being developed.</p>
+      </section>}
       <p className="notice">
-        TXT · Markdown · JSON conversations · text-based PDF. Originals stay
-        untouched. Up to 256 MiB per file.
+        Attach TXT · Markdown · JSON conversations · text-based PDF. Original files remain saved locally
+        and searchable within this project. Up to 256 MiB per file.
       </p>
       <div className="memory-tools">
         <input
@@ -366,8 +389,13 @@ export default function Research({
                     {new Date(s.created_at).toLocaleDateString()}{" "}
                     {s.tags && ` · ${s.tags}`}
                   </p>
+                  {s.role && <small className="source-role">{s.role}</small>}
+                  {s.use_guidance && <small>{s.use_guidance}</small>}
                   {s.warning && <small>{s.warning}</small>}
                 </div>
+                {!conversations && <button onClick={()=>{
+                  setSourceEdit(s);setRole(s.role??"Supporting");setGuidance(s.use_guidance??"");
+                }}>Use in book</button>}
                 <button
                   onClick={async () => {
                     const tags = prompt("Tags (separate with commas)", s.tags);
@@ -390,6 +418,32 @@ export default function Research({
             ))}
         </div>
       )}
+      {sourceEdit && <div className="modal-backdrop"><form className="modal gem-modal" role="dialog"
+        aria-modal="true" aria-label="Source guidance" onSubmit={async e=>{
+          e.preventDefault();setBusy(true);
+          try{
+            await request("source_guidance",{project_id:project,id:sourceEdit.id,role,use_guidance:guidance});
+            setSourceEdit(null);setRefresh(x=>x+1);
+          }catch(e){onError(errorText(e))}
+          finally{setBusy(false)}
+        }}>
+          <div className="eyebrow">HOW THIS PROJECT SHOULD USE THE SOURCE</div>
+          <h2>{sourceEdit.name}</h2>
+          <label>Role in the argument
+            <select value={role} onChange={e=>setRole(e.target.value)}>
+              <option>Supporting</option><option>Primary Reference</option>
+              <option>Critical Perspective</option><option>Background</option>
+            </select>
+          </label>
+          <label>Instructions for using this source
+            <textarea rows={5} maxLength={20000} value={guidance}
+              onChange={e=>setGuidance(e.target.value)}
+              placeholder="For example: Steelman the author's argument; compare Chapter 4 with my established framework; don't assume I agree with the source." />
+          </label>
+          <p className="muted">These instructions belong to this research source. They do not change your confirmed author mindset.</p>
+          <div className="row"><button type="button" onClick={()=>setSourceEdit(null)}>Cancel</button>
+            <button className="primary" disabled={busy}>Save source guidance</button></div>
+        </form></div>}
       <div className="row">
         <button disabled={!page || loading} onClick={() => setPage(page - 1)}>
           Previous
