@@ -1181,3 +1181,25 @@ main {
 .ai-provider-settings input,.ai-provider-settings select{width:100%;margin-top:7px;}
 @media(max-width:1150px){.ai-chat{flex-basis:350px;}}
 @media(max-width:750px){.ai-chat{position:absolute;inset:0 0 0 auto;max-width:100%;width:100%;z-index:15;}}
+
+/* Writer memory v0.1.5 — full transcript beside the manuscript. */
+.triplet-turn{margin-bottom:18px;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+.triplet-number{background:var(--panel);padding:9px 12px;font-size:11px;font-weight:700;color:var(--muted);}
+.triplet-layer{padding:13px;border-top:1px solid var(--line);}
+.triplet-layer button{margin-top:10px;font-size:11px;padding:7px 9px;}
+.interpretation-layer{border-left:3px solid #6f96ad;}
+.ai-layer{border-left:3px solid var(--accent);}
+.legacy-chat{margin-bottom:16px;font-size:12px;}
+.legacy-chat summary{cursor:pointer;padding:8px;background:var(--panel);}
+.profile-note,.draft-item{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;}
+.profile-note-body,.draft-item-content{min-width:0;flex:1;}
+.profile-actions{display:flex;flex-direction:column;gap:7px;flex-shrink:0;}
+.profile-note blockquote{white-space:pre-wrap;margin:8px 0;font-size:12px;border-left:2px solid var(--line);padding:8px;color:var(--muted);}
+.conversation-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;}
+.model-choices{display:grid;grid-template-columns:1fr;gap:5px;margin:8px 0;}
+.model-choices button{text-align:left;white-space:normal;font-size:11px;}
+.writer-chat .ai-chat-history{scroll-behavior:smooth;}
+.writer-chat .ai-chat-controls{flex-wrap:wrap;}
+.writer-chat .ai-chat-controls select{max-width:95px;}
+.writer-chat{max-width:56vw;flex-basis:430px;}
+@media(max-width:900px){.writer-chat{flex-basis:340px;}}

@@ -9,6 +9,8 @@ import Manuscript from "./Editor";
 import ScriptStudio from "./ScriptStudio";
 import Updates from "./Updates";
 import ChatPanel from "./ChatPanel";
+import WriterProfile from "./WriterProfile";
+import ConversationDraft from "./ConversationDraft";
 import Research, { Search, SourceReader } from "./Research";
 import MemoryView from "./Memory";
 import GemsView from "./Gems";
@@ -17,7 +19,7 @@ import ChannelsView from "./Channels";
 import type { ChannelProfile } from "./types";
 import type { GemDraft } from "./types";
 type View =
-  "Script Studio" | "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings";
+  "Script Studio" | "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings" | "Writer Profile" | "Conversation Draft";
 const views: View[] = [
   "Script Studio",
   "Write",
@@ -28,9 +30,11 @@ const views: View[] = [
   "Channels",
   "Gems",
   "Preview",
+  "Writer Profile",
+  "Conversation Draft",
   "Settings",
 ];
-const symbols = ["▦", "✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "⚙"];
+const symbols = ["▦", "✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "♧", "☷", "⚙"];
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [channels, setChannels] = useState<ChannelProfile[]>([]);
@@ -284,7 +288,7 @@ export default function App() {
     Conversations: isScript ? "Script conversations" : "Conversations",
     Memory: isScript ? "Script memory" : "Project memory", Frameworks: "Core frameworks",
     Channels: "Channel profiles", Gems: isScript ? "Script gems" : "Writing gems",
-    Preview: isScript ? "Draft preview" : "Book preview", Settings: "Settings",
+    Preview: isScript ? "Draft preview" : "Book preview", "Writer Profile": "Writer profile", "Conversation Draft": "Conversation draft", Settings: "Settings",
   }[v]);
   const switchWorkspace = (type: Project["project_type"]) => void action(async () => {
     const existing = projects.find(p => p.project_type === type);
@@ -583,6 +587,11 @@ export default function App() {
                 onOpenScript={p=>void action(()=>activate(p))}
                 onNewScript={channelId=>{setNewScriptChannel(channelId);setNewProject(true)}}
               />
+            ) : view === "Writer Profile" ? (
+              <WriterProfile onError={report}/>
+            ) : view === "Conversation Draft" ? (
+              <ConversationDraft key={project.id} project={project.id} onError={report}
+                onCreateChapter={createChatChapter}/>
             ) : view === "Gems" ? (
               <GemsView
                 script={!!isScript}
@@ -622,7 +631,8 @@ export default function App() {
               changeView("Gems");
             }}
             onAttach={async()=>attachWritingSources(false)}
-          />}
+            onGoDraft={()=>changeView("Conversation Draft")}
+          />
           {project && research && !chatOpen && !focus && (
             <>
               <div
