@@ -33,6 +33,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   });
   const [configured,setConfigured]=useState(false);
   const [key,setKey]=useState("");
+  const [skill,setSkill]=useState("reflect");
   const [settings,setSettings]=useState(false);
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState("");
@@ -67,7 +68,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     setBusy(true);setNotice("Keeping your original wording and asking the selected AI…");
     setInput("");
     try{
-      await invoke("ai_reply",{projectId:project.id,provider,model:models[provider],message:text});
+      await invoke("ai_reply",{projectId:project.id,provider,model:models[provider],message:text,skillId:skill});
       setNotice("The original, interpretation, response, and profile candidates are saved.");
     }catch(e){
       onError(errorText(e));
@@ -202,6 +203,15 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     </div>
     {notice&&<p role="status" className="ai-chat-notice">{notice}</p>}
     <form className="ai-composer" onSubmit={e=>{e.preventDefault();void send(input)}}>
+      <label className="eyebrow">Writing skill
+        <select aria-label="Active writing skill" value={skill} onChange={e=>setSkill(e.target.value)}>
+          <option value="reflect">Open conversation</option>
+          <option value="argument-review">Argument reviewer</option>
+          <option value="chapter-outline">Chapter architect</option>
+          <option value="source-audit">Source and citation auditor</option>
+          <option value="profile-observation">Writer profile reflection</option>
+        </select>
+      </label>
       <textarea ref={composer} aria-label="Message the writing assistant" rows={4} value={input}
         onChange={e=>setInput(e.target.value)} placeholder="Speak freely. The first version can be unfinished or grammatically imperfect…"
         onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send(input)}}}/>
