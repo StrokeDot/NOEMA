@@ -632,7 +632,7 @@ export default function App() {
             }}
             onAttach={async()=>attachWritingSources(false)}
             onGoDraft={()=>changeView("Conversation Draft")}
-          />
+          />}
           {project && research && !chatOpen && !focus && (
             <>
               <div
