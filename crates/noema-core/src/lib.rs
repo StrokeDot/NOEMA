@@ -340,7 +340,7 @@ impl Store {
                     let quote=item["evidence_quote"].as_str().unwrap_or("");
                     if !["Writing voice","Reasoning style","Moral framework","Values and beliefs","Working preferences","Other"].contains(&dimension)
                         || claim.trim().is_empty() || claim.len()>2000 || quote.len()>2000
-                        || (!quote.is_empty() && !string(&a,"original_evidence").contains(quote))
+                        || quote.is_empty() || !string(&a,"original_evidence").contains(quote)
                     {continue;}
                     let duplicate:i64=tx.query_row("SELECT count(*) FROM writer_profile_notes WHERE dimension=? AND claim=? AND state!='Rejected'",
                         params![dimension,claim],|r|r.get(0))?;

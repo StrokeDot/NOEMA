@@ -702,10 +702,10 @@ fn v9_conversation_preserves_original_and_requires_writer_confirmation() {
         "draft_candidate":"Responsibility is a question worth examining carefully."}));
     assert!(store.request("complete_writing_turn",json!({"project_id":book,"turn_id":turn,
         "interpreted_text":"overwritten","assistant_response":"bad"})).is_err());
-    let note=call(&mut store,"writer_profile");
+    let note=call(&mut store,"writer_profile",json!({}));
     assert_eq!(note.as_array().unwrap().len(),1);
     assert_eq!(note[0]["state"],"Candidate");
-    assert_eq!(call(&mut store,"writer_profile_context"),json!([]));
+    assert_eq!(call(&mut store,"writer_profile_context",json!({})),json!([]));
     let draft=call(&mut store,"conversation_draft",json!({"project_id":book}));
     assert_eq!(draft.as_array().unwrap().len(),1);
     assert_eq!(draft[0]["state"],"Candidate");
@@ -717,7 +717,7 @@ fn v9_conversation_preserves_original_and_requires_writer_confirmation() {
     assert_eq!(call(&mut store,"approved_conversation_draft",json!({"project_id":other})),json!([]));
     let nid=note[0]["id"].as_str().unwrap().to_owned();
     call(&mut store,"review_writer_profile_note",json!({"id":nid,"state":"Confirmed"}));
-    assert_eq!(call(&mut store,"writer_profile_context")[0]["dimension"],"Reasoning style");
+    assert_eq!(call(&mut store,"writer_profile_context",json!({}))[0]["dimension"],"Reasoning style");
     assert_eq!(call(&mut store,"chat_context",json!({"project_id":book,"query":"responsibility"}))
         ["writer_profile"][0]["claim"],"Prefers exploratory spoken reasoning.");
     call(&mut store,"correct_turn_meaning",json!({"project_id":book,"turn_id":turn,
