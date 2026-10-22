@@ -6,7 +6,7 @@ type Turn={id:string;original_text:string;interpreted_text:string;interpretation
   assistant_response:string;provider:string;model:string;state:"pending"|"complete";created_at:number};
 type Legacy={id:string;role:"user"|"assistant";content:string;provider:string;created_at:number};
 type Status={openai_key_saved:boolean};
-type RecEvent={results:ArrayLike<{[n:number]:{transcript:string}}>}};
+type RecEvent={results:ArrayLike<{[n:number]:{transcript:string}}>};
 type SpeechEngine={lang:string;interimResults:boolean;onresult:((e:RecEvent)=>void)|null;
   onend:(()=>void)|null;onerror:((e:{error:string})=>void)|null;start:()=>void;stop:()=>void};
 type SpeechCtor=new()=>SpeechEngine;
