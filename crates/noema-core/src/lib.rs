@@ -71,7 +71,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 8 {
+        if ver > 9 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -114,6 +114,11 @@ impl Store {
         if ver < 8 {
             let tx = conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v8_working_document.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 9 {
+            let tx=conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v9_writer_memory.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -305,6 +310,141 @@ impl Store {
                     params![cid,pid,title,html,text,pid,now()])?;
                 Ok(json!({"id":cid}))
             }
+            "begin_writing_turn" => {
+                let pid=required(&a,"project_id")?;
+                let original=required(&a,"original_text")?;
+                if original.len()>100_000 {return Err("Writer message is too long".into());}
+                let exists:i64=self.conn.query_row("SELECT count(*) FROM projects WHERE id=?",
+                    params![pid],|r|r.get(0))?;
+                if exists!=1 {return Err("Writing project not found".into());}
+                let tid=id();
+                self.conn.execute("INSERT INTO writing_turns(id,project_id,original_text,created_at,updated_at) VALUES(?,?,?,?,?)",
+                    params![tid,pid,original,now(),now()])?;
+                Ok(json!({"id":tid}))
+            }
+            "complete_writing_turn" => {
+                let pid=required(&a,"project_id")?;
+                let tid=required(&a,"turn_id")?;
+                let interpreted=required(&a,"interpreted_text")?;
+                let answer=required(&a,"assistant_response")?;
+                if interpreted.len()>100_000 || answer.len()>100_000 {return Err("AI writing exceeds the size limit".into());}
+                let suggestions=a["profile_suggestions"].as_array().cloned().unwrap_or_default();
+                let draft=a["draft_candidate"].as_str().unwrap_or("").trim();
+                let tx=self.conn.transaction()?;
+                let changed=tx.execute("UPDATE writing_turns SET interpreted_text=?,assistant_response=?,provider=?,model=?,state='complete',updated_at=? WHERE id=? AND project_id=? AND state='pending'",
+                    params![interpreted,answer,string(&a,"provider"),string(&a,"model"),now(),tid,pid])?;
+                if changed!=1 {return Err("Conversation turn not found or already finalized".into());}
+                for item in suggestions.into_iter().take(3) {
+                    let Some(dimension)=item["dimension"].as_str() else {continue};
+                    let Some(claim)=item["claim"].as_str() else {continue};
+                    let quote=item["evidence_quote"].as_str().unwrap_or("");
+                    if !["Writing voice","Reasoning style","Moral framework","Values and beliefs","Working preferences","Other"].contains(&dimension)
+                        || claim.trim().is_empty() || claim.len()>2000 || quote.len()>2000
+                        || (!quote.is_empty() && !string(&a,"original_evidence").contains(quote))
+                    {continue;}
+                    let duplicate:i64=tx.query_row("SELECT count(*) FROM writer_profile_notes WHERE dimension=? AND claim=? AND state!='Rejected'",
+                        params![dimension,claim],|r|r.get(0))?;
+                    if duplicate==0 {
+                        tx.execute("INSERT INTO writer_profile_notes(id,dimension,claim,evidence_quote,source_turn_id,source_project_id,state,created_at,updated_at) VALUES(?,?,?,?,?,?,'Candidate',?,?)",
+                            params![id(),dimension,claim,quote,tid,pid,now(),now()])?;
+                    }
+                }
+                let auto_collect:i64=tx.query_row("SELECT COALESCE((SELECT auto_collect FROM conversation_draft_settings WHERE project_id=?),0)",[pid],|r|r.get(0))?;
+                if auto_collect==1 && !draft.is_empty() && draft.len()<=100_000 {
+                    tx.execute("INSERT INTO conversation_draft_items(id,project_id,turn_id,source,text,state,created_at,updated_at) VALUES(?,?,?,'AI proposal',?,'Candidate',?,?)",
+                        params![id(),pid,tid,draft,now(),now()])?;
+                }
+                tx.commit()?;
+                Ok(json!(true))
+            }
+            "writing_turns" => rows(&self.conn,
+                "SELECT id,original_text,interpreted_text,interpretation_author_corrected,assistant_response,provider,model,state,created_at FROM writing_turns WHERE project_id=? ORDER BY created_at,id LIMIT 500",
+                params![required(&a,"project_id")?]),
+            "correct_turn_meaning" => {
+                let pid=required(&a,"project_id")?;
+                let tid=required(&a,"turn_id")?;
+                let correction=required(&a,"interpreted_text")?;
+                if correction.len()>100_000{return Err("Interpretation correction is too long".into());}
+                let count=self.conn.execute("UPDATE writing_turns SET interpreted_text=?, interpretation_author_corrected=1,updated_at=? WHERE id=? AND project_id=? AND state='complete'",
+                    params![correction,now(),tid,pid])?;
+                if count!=1{return Err("Completed conversation turn not found".into());}
+                Ok(json!(true))
+            }
+            "writer_profile" => rows(&self.conn,
+                "SELECT n.id,n.dimension,n.claim,n.evidence_quote,n.source_turn_id,n.source_project_id,n.state,n.created_at,n.updated_at,p.title AS project_title FROM writer_profile_notes n LEFT JOIN projects p ON p.id=n.source_project_id ORDER BY n.updated_at DESC,n.id LIMIT 500",
+                []),
+            "add_writer_profile_note" => {
+                let dimension=required(&a,"dimension")?;
+                if !["Writing voice","Reasoning style","Moral framework","Values and beliefs","Working preferences","Other"].contains(&dimension) {
+                    return Err("Unsupported writer profile dimension".into());
+                }
+                let claim=required(&a,"claim")?.trim();
+                if claim.len()>2000{return Err("Profile statement is too long".into());}
+                let nid=id();
+                self.conn.execute("INSERT INTO writer_profile_notes(id,dimension,claim,state,created_at,updated_at) VALUES(?,?,?,'Confirmed',?,?)",
+                    params![nid,dimension,claim,now(),now()])?;
+                Ok(json!({"id":nid}))
+            }
+            "review_writer_profile_note" => {
+                let nid=required(&a,"id")?;
+                let state=required(&a,"state")?;
+                if !["Candidate","Confirmed","Rejected"].contains(&state){return Err("Invalid review state".into());}
+                let count=self.conn.execute("UPDATE writer_profile_notes SET state=?,updated_at=? WHERE id=?",
+                    params![state,now(),nid])?;
+                if count!=1{return Err("Writer profile note not found".into());}
+                Ok(json!(true))
+            }
+            "writer_profile_context" => rows(&self.conn,
+                "SELECT dimension,claim FROM writer_profile_notes WHERE state='Confirmed' ORDER BY updated_at DESC LIMIT 80",
+                []),
+            "draft_settings" => {
+                let pid=required(&a,"project_id")?;
+                let enabled:i64=self.conn.query_row("SELECT COALESCE((SELECT auto_collect FROM conversation_draft_settings WHERE project_id=?),0)",
+                    params![pid],|r|r.get(0))?;
+                Ok(json!({"auto_collect":enabled==1}))
+            }
+            "set_draft_auto_collect" => {
+                let pid=required(&a,"project_id")?;
+                let enabled=a["enabled"].as_bool().ok_or("Missing automatic draft setting")?;
+                self.conn.execute("INSERT INTO conversation_draft_settings(project_id,auto_collect) VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET auto_collect=excluded.auto_collect",
+                    params![pid,if enabled{1}else{0}])?;
+                Ok(json!({"auto_collect":enabled}))
+            }
+            "conversation_draft" => rows(&self.conn,
+                "SELECT id,turn_id,source,text,state,created_at,updated_at FROM conversation_draft_items WHERE project_id=? ORDER BY created_at,id LIMIT 1000",
+                params![required(&a,"project_id")?]),
+            "save_draft_item" => {
+                let pid=required(&a,"project_id")?;
+                let source=required(&a,"source")?;
+                if !["Author original","Author meaning","AI proposal","Author addition"].contains(&source){
+                    return Err("Invalid draft source".into());
+                }
+                let content=required(&a,"text")?.trim();
+                if content.len()>100_000{return Err("Draft passage is too long".into());}
+                let tid=a["turn_id"].as_str().filter(|v|!v.is_empty());
+                if let Some(turn)=tid {
+                    let exists:i64=self.conn.query_row("SELECT count(*) FROM writing_turns WHERE id=? AND project_id=?",
+                        params![turn,pid],|r|r.get(0))?;
+                    if exists!=1{return Err("Turn does not belong to this project".into());}
+                }
+                let id=id();
+                self.conn.execute("INSERT INTO conversation_draft_items(id,project_id,turn_id,source,text,state,created_at,updated_at) VALUES(?,?,?,?,?,'Candidate',?,?)",
+                    params![id,pid,tid,source,content,now(),now()])?;
+                Ok(json!({"id":id}))
+            }
+            "review_draft_item" => {
+                let pid=required(&a,"project_id")?;
+                let id=required(&a,"id")?;
+                let status=required(&a,"state")?;
+                if !["Candidate","Approved","Rejected"].contains(&status){return Err("Invalid draft review state".into());}
+                let changed=self.conn.execute("UPDATE conversation_draft_items SET state=?,updated_at=? WHERE id=? AND project_id=?",
+                    params![status,now(),id,pid])?;
+                if changed!=1{return Err("Draft passage not found in project".into());}
+                Ok(json!(true))
+            }
+            "approved_conversation_draft" => rows(&self.conn,
+                "SELECT id,source,text,created_at FROM conversation_draft_items WHERE project_id=? AND state='Approved' ORDER BY created_at,id",
+                params![required(&a,"project_id")?]),
             "chat_history" => rows(&self.conn,
                 "SELECT id,role,content,provider,created_at FROM project_chat_messages WHERE project_id=? ORDER BY created_at,id LIMIT 300",
                 params![required(&a,"project_id")?]),
@@ -359,7 +499,12 @@ impl Store {
                 let chapters=rows(&self.conn,
                     "SELECT id,title,substr(text,1,5000) AS text FROM chapters WHERE project_id=? AND deleted=0 ORDER BY updated_at DESC LIMIT 3",
                     params![pid])?;
-                Ok(json!({"project":meta[0],"frameworks":frameworks,"established_positions":positions,
+                let confirmed=rows(&self.conn,
+                    "SELECT dimension,claim FROM writer_profile_notes WHERE state='Confirmed' ORDER BY updated_at DESC LIMIT 80",[])?;
+                let prior_turns=rows(&self.conn,
+                    "SELECT original_text,interpreted_text,assistant_response FROM writing_turns WHERE project_id=? AND state='complete' ORDER BY created_at DESC,id DESC LIMIT 8",
+                    params![pid])?;
+                Ok(json!({"project":meta[0],"frameworks":frameworks,"established_positions":positions,"writer_profile":confirmed,"prior_turns":prior_turns,
                     "passages":passages,"recent_messages":recent,"recent_chapters":chapters}))
             }
             "set_working_document" => {
@@ -757,7 +902,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":8}
+            "path":self.root.to_string_lossy(),"schema":9}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);
