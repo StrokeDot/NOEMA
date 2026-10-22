@@ -215,3 +215,18 @@ No API model or local LLM is automatically downloaded, and provider answers shou
 NOEMA 0.1.2–0.1.3 can discover newer builds but could fail to download the GitHub Actions archive with HTTP 415 (Unsupported Media Type). The updater now uses GitHub's documented `Accept: application/vnd.github+json` on the artifact archive API endpoint, follows its temporary redirect, verifies the SHA-256 artifact digest, then backs up all writing before staging the installer.
 
 **One-time manual installation required:** Existing builds contain the broken download request. Download and install 0.1.4 from the private GitHub Actions build after verification, directly over the existing version. From 0.1.4 onward, use NOEMA → Settings → NOEMA Updates for future releases. The first complete 0.1.4-to-next-version in-app update should be tested with a future release before calling that functionality end-to-end verified.
+
+
+## NOEMA 0.1.5: Three-layer conversations and evolving writer identity
+
+**Writer profile:** A timeline of evidence-linked author preferences, thinking patterns, philosophical/moral frameworks and writing voice. Model-inferred observations enter as Candidate only. The writer reviews and confirms/rejects them; only Confirmed entries inform future AI prompts. NOEMA does not diagnose personality or assume that a single disfluent statement reveals a stable belief.
+
+**Writer conversations:** Each new completed turn is saved as (1) the original writer input, immutable, (2) the AI's coherent-language interpretation that the author may correct, and (3) the AI's response. Inputs awaiting an AI response remain in the database as pending, preserving the original even after a failed provider call. Earlier chats from old versions remain viewable.
+
+**Conversation draft:** A second project-local document holds select lines, claims and potential prose from either speaker. Entries can be approved/excluded and assembled into a new editable chapter. An opt-in “auto collect” setting gathers book-ready AI passages as candidates after each exchange, but cannot silently overwrite manuscript content.
+
+**Providers:** Separate OpenAI API account or free local Ollama. Built-in writing workflows include open discussion, argument review, chapter organization, citation auditing and careful writer-profile reflection. Untrusted third-party executable plugins are deliberately not supported.
+
+**Voice:** The Dictate button tries the operating webview's speech recognition when exposed. If unavailable, use Windows + H in the input field. Vendor speech recognition may use an external service. A bundled fully-offline whisper.cpp recorder/inference pipeline is a separate work item; this release does not pretend to provide it.
+
+**Compatibility:** Additive database migration v9, retaining all older books, media/script project records and source originals. A separate SCRIPTORIA migration will eventually remove the script UI from NOEMA safely.

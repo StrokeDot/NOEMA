@@ -284,7 +284,7 @@ fn backup_reopens_and_migration_is_repeatable() {
         b.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        8
+        9
     );
 }
 #[test]
@@ -355,7 +355,7 @@ fn book_gems_persist_preserve_original_and_isolate_books() {
     assert_eq!(gem[0]["origin"],"AI Assistant");
     assert_eq!(gem[0]["source_label"],"Conversation 12");
     assert_eq!(gem[0]["status"],"Approved");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),8);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),9);
     call(&mut store,"delete_gem",json!({"project_id":a,"id":id}));
     assert_eq!(call(&mut store,"gems",json!({"project_id":a})),json!([]));
     assert_eq!(store.conn.query_row("SELECT count(*) FROM book_gems WHERE id=?",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
@@ -368,7 +368,7 @@ fn book_gem_migration_from_v1_preserves_existing_memories() {
     let p=project(&mut s,"An existing book");
     let mid=call(&mut s,"save_memory",json!({"project_id":p,"category":"Writing Instructions","title":"Style","body":"Keep original voice"}))["id"].as_str().unwrap().to_string();
     // Simulate a v0.1 database missing the gems table but retaining manuscripts/memory.
-    s.conn.execute_batch("DROP INDEX source_working_project; ALTER TABLE sources DROP COLUMN working_document; DROP TABLE project_chat_messages; ALTER TABLE sources DROP COLUMN use_guidance; ALTER TABLE sources DROP COLUMN role; DROP TABLE script_cue_revisions; DROP TABLE script_cues; DROP INDEX projects_channel; ALTER TABLE projects DROP COLUMN script_status; ALTER TABLE projects DROP COLUMN channel_id; DROP TABLE channel_profiles; DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
+    s.conn.execute_batch("DROP TABLE writer_profile_notes; DROP TABLE conversation_draft_items; DROP TABLE conversation_draft_settings; DROP TABLE writing_turns; DROP INDEX source_working_project; ALTER TABLE sources DROP COLUMN working_document; DROP TABLE project_chat_messages; ALTER TABLE sources DROP COLUMN use_guidance; ALTER TABLE sources DROP COLUMN role; DROP TABLE script_cue_revisions; DROP TABLE script_cues; DROP INDEX projects_channel; ALTER TABLE projects DROP COLUMN script_status; ALTER TABLE projects DROP COLUMN channel_id; DROP TABLE channel_profiles; DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
     drop(s);
     let mut s=Store::open(d.path()).unwrap();
     let memories=call(&mut s,"memories",json!({"project_id":p}));
@@ -426,7 +426,7 @@ fn scripts_and_reusable_frameworks_respect_project_activation() {
         "perspective":"External","principles":"Different premises","status":"Draft"}));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})),json!([]));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":book})),json!([]));
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),8);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),9);
 }
 
 #[test]
@@ -484,7 +484,7 @@ fn channel_profiles_group_scripts_and_references_respect_opt_in() {
     let mut reopened=Store::open(dir.path()).unwrap();
     assert_eq!(call(&mut reopened,"channel_scripts",json!({"channel_id":channel_b}))[0]["script_status"],"Published");
     assert_eq!(call(&mut reopened,"channels",json!({})).as_array().unwrap().len(),2);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),8);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),9);
 }
 #[test]
 fn legacy_script_migrates_without_losing_its_manuscript() {
@@ -545,7 +545,7 @@ fn video_cues_preserve_separate_narration_visuals_sources_and_revisions() {
     assert_eq!(cue["visuals"],"Slow close-up on Arthur");
     assert_eq!(cue["source_locator"],"RDR2 bench scene");
     assert_eq!(cue["planned_seconds"],15);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),8);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),9);
     call(&mut reopened,"delete_script_cue",json!({"project_id":script,"id":cid}));
     assert_eq!(call(&mut reopened,"script_cues",json!({"project_id":script})).as_array().unwrap().len(),1);
     let retained:i64=reopened.conn.query_row("SELECT count(*) FROM script_cues WHERE id=?",[cid],|r|r.get(0)).unwrap();
@@ -676,4 +676,76 @@ fn word_epub_and_project_chat_persist_with_strict_isolation() {
     assert_eq!(call(&mut again,"chat_history",json!({"project_id":book})).as_array().unwrap().len(),2);
     assert_eq!(call(&mut again,"sources",json!({"project_id":book})).as_array().unwrap().iter()
         .filter(|s|s["working_document"]==1).count(),1);
+}
+
+#[test]
+fn v9_conversation_preserves_original_and_requires_writer_confirmation() {
+    let tmp=tempfile::tempdir().unwrap();
+    let mut store=Store::open(tmp.path()).unwrap();
+    let book=project(&mut store,"The Book");
+    let other=project(&mut store,"Different Book");
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),9);
+    let original="I don't have the full idea but I feel what responsibility mean, in the moment.";
+    let turn=call(&mut store,"begin_writing_turn",json!({"project_id":book,"original_text":original}))["id"]
+        .as_str().unwrap().to_string();
+    assert_eq!(call(&mut store,"writing_turns",json!({"project_id":book}))[0]["original_text"],original);
+    assert_eq!(call(&mut store,"writing_turns",json!({"project_id":other})),json!([]));
+    call(&mut store,"set_draft_auto_collect",json!({"project_id":book,"enabled":true}));
+    call(&mut store,"complete_writing_turn",json!({"project_id":book,"turn_id":turn,
+        "original_evidence":original,
+        "interpreted_text":"Responsibility matters even while the idea is forming.",
+        "assistant_response":"We should distinguish agency from blame.",
+        "provider":"ollama","model":"gpt-oss:20b",
+        "profile_suggestions":[{"dimension":"Reasoning style",
+            "claim":"Prefers exploratory spoken reasoning.",
+            "evidence_quote":"I don't have the full idea"}],
+        "draft_candidate":"Responsibility is a question worth examining carefully."}));
+    assert!(store.request("complete_writing_turn",json!({"project_id":book,"turn_id":turn,
+        "interpreted_text":"overwritten","assistant_response":"bad"})).is_err());
+    let note=call(&mut store,"writer_profile");
+    assert_eq!(note.as_array().unwrap().len(),1);
+    assert_eq!(note[0]["state"],"Candidate");
+    assert_eq!(call(&mut store,"writer_profile_context"),json!([]));
+    let draft=call(&mut store,"conversation_draft",json!({"project_id":book}));
+    assert_eq!(draft.as_array().unwrap().len(),1);
+    assert_eq!(draft[0]["state"],"Candidate");
+    let draft_id=draft[0]["id"].as_str().unwrap().to_owned();
+    assert!(store.request("review_draft_item",json!({"project_id":other,"id":draft_id,"state":"Approved"})).is_err());
+    call(&mut store,"review_draft_item",json!({"project_id":book,"id":draft_id,"state":"Approved"}));
+    assert_eq!(call(&mut store,"approved_conversation_draft",json!({"project_id":book}))
+        .as_array().unwrap().len(),1);
+    assert_eq!(call(&mut store,"approved_conversation_draft",json!({"project_id":other})),json!([]));
+    let nid=note[0]["id"].as_str().unwrap().to_owned();
+    call(&mut store,"review_writer_profile_note",json!({"id":nid,"state":"Confirmed"}));
+    assert_eq!(call(&mut store,"writer_profile_context")[0]["dimension"],"Reasoning style");
+    assert_eq!(call(&mut store,"chat_context",json!({"project_id":book,"query":"responsibility"}))
+        ["writer_profile"][0]["claim"],"Prefers exploratory spoken reasoning.");
+    call(&mut store,"correct_turn_meaning",json!({"project_id":book,"turn_id":turn,
+        "interpreted_text":"My position is not complete yet."}));
+    let record=call(&mut store,"writing_turns",json!({"project_id":book}));
+    assert_eq!(record[0]["original_text"],original);
+    assert_eq!(record[0]["interpreted_text"],"My position is not complete yet.");
+    assert_eq!(record[0]["interpretation_author_corrected"],1);
+    assert!(store.request("correct_turn_meaning",json!({"project_id":other,"turn_id":turn,
+        "interpreted_text":"cannot edit"})).is_err());
+    drop(store);
+    let mut reopened=Store::open(tmp.path()).unwrap();
+    assert_eq!(call(&mut reopened,"writing_turns",json!({"project_id":book}))[0]["original_text"],original);
+    assert_eq!(call(&mut reopened,"conversation_draft",json!({"project_id":book}))[0]["state"],"Approved");
+}
+
+#[test]
+fn v9_keeps_an_untouched_pending_input_when_a_provider_fails() {
+    let tmp=tempfile::tempdir().unwrap();
+    let mut store=Store::open(tmp.path()).unwrap();
+    let book=project(&mut store,"Book");
+    let turn=call(&mut store,"begin_writing_turn",
+        json!({"project_id":book,"original_text":"Unfinished thought."}));
+    drop(store);
+    let mut reopened=Store::open(tmp.path()).unwrap();
+    let record=call(&mut reopened,"writing_turns",json!({"project_id":book}));
+    assert_eq!(record[0]["original_text"],"Unfinished thought.");
+    assert_eq!(record[0]["state"],"pending");
+    assert_eq!(record[0]["interpreted_text"],"");
+    assert!(reopened.request("review_writer_profile_note",json!({"id":turn["id"],"state":"Confirmed"})).is_err());
 }

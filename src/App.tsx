@@ -453,7 +453,7 @@ export default function App() {
           </>}
           <div className="nav-footer">
             <span className="local-dot" />
-            Local & private<span>Version 0.1.4</span>
+            Local & private<span>Version 0.1.5</span>
           </div>
         </aside>
       )}
