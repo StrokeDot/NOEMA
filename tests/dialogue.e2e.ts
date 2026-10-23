@@ -4,8 +4,10 @@ test("book dialogue keeps separate conversation purposes and preserves them afte
   const errors:string[]=[];
   page.on("pageerror",e=>errors.push(e.message));
   await page.goto("/");
-  await page.getByRole("button",{name:"+ New writing project"}).click();
   const project=page.getByRole("dialog",{name:"New writing project"});
+  if(!(await project.isVisible())){
+    await page.getByRole("button",{name:"+ New writing project"}).click();
+  }
   await project.getByRole("button",{name:"Book project",exact:false}).click();
   await project.getByLabel("Book title",{exact:true}).fill("Dialogue-first book");
   await project.getByLabel("Author",{exact:true}).fill("Author");
