@@ -87,6 +87,7 @@ pub fn run() {
             ai_chat::ai_disconnect,
             ai_chat::ai_reply,
             ai_chat::ai_local_models,
+            ai_chat::ai_start_ollama,
             ai_chat::ai_pull_model,
         ])
         .run(tauri::generate_context!())

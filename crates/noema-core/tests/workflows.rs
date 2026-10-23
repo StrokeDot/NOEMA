@@ -284,7 +284,7 @@ fn backup_reopens_and_migration_is_repeatable() {
         b.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        12
+        13
     );
 }
 #[test]
@@ -355,7 +355,7 @@ fn book_gems_persist_preserve_original_and_isolate_books() {
     assert_eq!(gem[0]["origin"],"AI Assistant");
     assert_eq!(gem[0]["source_label"],"Conversation 12");
     assert_eq!(gem[0]["status"],"Approved");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),12);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),13);
     call(&mut store,"delete_gem",json!({"project_id":a,"id":id}));
     assert_eq!(call(&mut store,"gems",json!({"project_id":a})),json!([]));
     assert_eq!(store.conn.query_row("SELECT count(*) FROM book_gems WHERE id=?",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
@@ -368,7 +368,7 @@ fn book_gem_migration_from_v1_preserves_existing_memories() {
     let p=project(&mut s,"An existing book");
     let mid=call(&mut s,"save_memory",json!({"project_id":p,"category":"Writing Instructions","title":"Style","body":"Keep original voice"}))["id"].as_str().unwrap().to_string();
     // Simulate a v0.1 database missing the gems table but retaining manuscripts/memory.
-    s.conn.execute_batch("DROP INDEX writing_turns_by_conversation; ALTER TABLE writing_turns DROP COLUMN conversation_id; DROP TABLE writing_conversations; DROP INDEX source_project_origin; ALTER TABLE sources DROP COLUMN source_origin; DROP TABLE writer_profile_revisions; DROP TABLE writer_profile_notes; DROP TABLE conversation_draft_items; DROP TABLE conversation_draft_settings; DROP TABLE writing_turns; DROP INDEX source_working_project; ALTER TABLE sources DROP COLUMN working_document; DROP TABLE project_chat_messages; ALTER TABLE sources DROP COLUMN use_guidance; ALTER TABLE sources DROP COLUMN role; DROP TABLE script_cue_revisions; DROP TABLE script_cues; DROP INDEX projects_channel; ALTER TABLE projects DROP COLUMN script_status; ALTER TABLE projects DROP COLUMN channel_id; DROP TABLE channel_profiles; DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
+    s.conn.execute_batch("DROP INDEX dialogues_project_trash; ALTER TABLE writing_conversations DROP COLUMN deleted_at; DROP INDEX writing_turns_by_conversation; ALTER TABLE writing_turns DROP COLUMN conversation_id; DROP TABLE writing_conversations; DROP INDEX source_project_origin; ALTER TABLE sources DROP COLUMN source_origin; DROP TABLE writer_profile_revisions; DROP TABLE writer_profile_notes; DROP TABLE conversation_draft_items; DROP TABLE conversation_draft_settings; DROP TABLE writing_turns; DROP INDEX source_working_project; ALTER TABLE sources DROP COLUMN working_document; DROP TABLE project_chat_messages; ALTER TABLE sources DROP COLUMN use_guidance; ALTER TABLE sources DROP COLUMN role; DROP TABLE script_cue_revisions; DROP TABLE script_cues; DROP INDEX projects_channel; ALTER TABLE projects DROP COLUMN script_status; ALTER TABLE projects DROP COLUMN channel_id; DROP TABLE channel_profiles; DROP TABLE project_frameworks; DROP TABLE belief_frameworks; ALTER TABLE projects DROP COLUMN project_type; DROP TABLE book_gems; PRAGMA user_version=1;").unwrap();
     drop(s);
     let mut s=Store::open(d.path()).unwrap();
     let memories=call(&mut s,"memories",json!({"project_id":p}));
@@ -426,7 +426,7 @@ fn scripts_and_reusable_frameworks_respect_project_activation() {
         "perspective":"External","principles":"Different premises","status":"Draft"}));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})),json!([]));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":book})),json!([]));
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),12);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),13);
 }
 
 #[test]
@@ -484,7 +484,7 @@ fn channel_profiles_group_scripts_and_references_respect_opt_in() {
     let mut reopened=Store::open(dir.path()).unwrap();
     assert_eq!(call(&mut reopened,"channel_scripts",json!({"channel_id":channel_b}))[0]["script_status"],"Published");
     assert_eq!(call(&mut reopened,"channels",json!({})).as_array().unwrap().len(),2);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),12);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),13);
 }
 #[test]
 fn legacy_script_migrates_without_losing_its_manuscript() {
@@ -545,7 +545,7 @@ fn video_cues_preserve_separate_narration_visuals_sources_and_revisions() {
     assert_eq!(cue["visuals"],"Slow close-up on Arthur");
     assert_eq!(cue["source_locator"],"RDR2 bench scene");
     assert_eq!(cue["planned_seconds"],15);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),12);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),13);
     call(&mut reopened,"delete_script_cue",json!({"project_id":script,"id":cid}));
     assert_eq!(call(&mut reopened,"script_cues",json!({"project_id":script})).as_array().unwrap().len(),1);
     let retained:i64=reopened.conn.query_row("SELECT count(*) FROM script_cues WHERE id=?",[cid],|r|r.get(0)).unwrap();
@@ -684,7 +684,7 @@ fn v9_conversation_preserves_original_and_requires_writer_confirmation() {
     let mut store=Store::open(tmp.path()).unwrap();
     let book=project(&mut store,"The Book");
     let other=project(&mut store,"Different Book");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),12);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),13);
     let original="I don't have the full idea but I feel what responsibility mean, in the moment.";
     let turn=call(&mut store,"begin_writing_turn",json!({"project_id":book,"original_text":original}))["id"]
         .as_str().unwrap().to_string();
@@ -758,7 +758,7 @@ fn author_and_external_sources_are_isolated_and_critical_review_requires_acknowl
     let mut store=Store::open(dir.path().join("data")).unwrap();
     let book=project(&mut store,"Author's first book");
     let other=project(&mut store,"Other author's book");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),12);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),13);
     let author_source=dir.path().join("author.md");
     let external_source=dir.path().join("external.md");
     fs::write(&author_source,"The author proposes an early argument about moral freedom.").unwrap();
@@ -920,4 +920,37 @@ fn book_dialogues_keep_goals_separate_and_preserve_older_turns() {
     let mut again=Store::open(tmp.path()).unwrap();
     assert_eq!(call(&mut again,"writing_turns",json!({"project_id":first,"dialogue_id":a}))[0]["original_text"],
         "Can courage be learned?");
+}
+
+#[test]
+fn deleted_dialogues_are_recoverable_without_losing_turns_or_book_drafts(){
+    let tmp=tempfile::tempdir().unwrap();
+    let mut s=Store::open(tmp.path()).unwrap();
+    let p=project(&mut s,"Main book");
+    let second=project(&mut s,"Unrelated book");
+    let chapter_id=chapter(&mut s,&p);
+    call(&mut s,"save_chapter",json!({"project_id":p,"id":chapter_id,
+        "version":0,"html":"<p>Book passage retained.</p>","text":"Book passage retained."}));
+    let item=call(&mut s,"create_book_dialogue",json!({"project_id":p,"title":"Reason 1","goal":"Test a claim"}));
+    let did=item["id"].as_str().unwrap().to_string();
+    let tid=call(&mut s,"begin_writing_turn",json!({"project_id":p,"dialogue_id":did,
+        "original_text":"A thought worth preserving."}))["id"].as_str().unwrap().to_owned();
+    assert!(s.request("delete_book_dialogue",json!({"project_id":second,"dialogue_id":did})).is_err());
+    call(&mut s,"delete_book_dialogue",json!({"project_id":p,"dialogue_id":did}));
+    assert_eq!(call(&mut s,"book_dialogues",json!({"project_id":p})),json!([]));
+    assert_eq!(call(&mut s,"trashed_book_dialogues",json!({"project_id":p}))[0]["title"],"Reason 1");
+    assert!(s.request("chat_context",json!({"project_id":p,"dialogue_id":did,"query":"thought"})).is_err());
+    assert_eq!(call(&mut s,"writing_turns",json!({"project_id":p,"dialogue_id":did})),json!([]));
+    assert_eq!(call(&mut s,"chapter",json!({"project_id":p,"id":chapter_id}))["text"],"Book passage retained.");
+    let stored:String=s.conn.query_row("SELECT original_text FROM writing_turns WHERE id=?",
+        [tid.as_str()],|r|r.get(0)).unwrap();
+    assert_eq!(stored,"A thought worth preserving.");
+    drop(s);
+    let mut s=Store::open(tmp.path()).unwrap();
+    assert_eq!(call(&mut s,"trashed_book_dialogues",json!({"project_id":p})).as_array().unwrap().len(),1);
+    call(&mut s,"restore_book_dialogue",json!({"project_id":p,"dialogue_id":did}));
+    assert_eq!(call(&mut s,"writing_turns",json!({"project_id":p,"dialogue_id":did}))[0]["original_text"],
+        "A thought worth preserving.");
+    assert!(s.request("restore_book_dialogue",json!({"project_id":second,"dialogue_id":did})).is_err());
+    assert_eq!(call(&mut s,"chapter",json!({"project_id":p,"id":chapter_id}))["text"],"Book passage retained.");
 }

@@ -33,6 +33,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const [turns,setTurns]=useState<Turn[]>([]);
   const [legacy,setLegacy]=useState<Legacy[]>([]);
   const [dialogues,setDialogues]=useState<Dialogue[]>([]);
+  const [deletedDialogues,setDeletedDialogues]=useState<Dialogue[]>([]);
   const [activeDialogue,setActiveDialogue]=useState<string|null>(null);
   const [creating,setCreating]=useState(false);
   const [newTitle,setNewTitle]=useState("");
@@ -40,8 +41,15 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const [editing,setEditing]=useState(false);
   const [editTitle,setEditTitle]=useState("");
   const [editGoal,setEditGoal]=useState("");
-  const [localModels,setLocalModels]=useState<LocalModel[]>([]);
+  const [localModels,setLocalModels]=useState<LocalModel[]>(()=>{
+    try{
+      const cached=JSON.parse(localStorage.getItem("noema-ollama-last-seen-models")||"[]");
+      return Array.isArray(cached)?cached.filter((m:unknown)=>typeof m==="object"&&m!==null&&typeof (m as LocalModel).name==="string"):[];
+    }catch{return []}
+  });
   const [ollamaReady,setOllamaReady]=useState(false);
+  const [ollamaChecking,setOllamaChecking]=useState(false);
+  const [ollamaStarting,setOllamaStarting]=useState(false);
   const [ollamaVersion,setOllamaVersion]=useState<string|null>(null);
   const [pullError,setPullError]=useState("");
   const [lastDownload,setLastDownload]=useState<string|null>(null);
@@ -76,8 +84,13 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     setTurns(ts);setLegacy(h);
   },[project.id,activeDialogue]);
   const loadDialogues=useCallback(async()=>{
-    const result=await request<Dialogue[]>("book_dialogues",{project_id:project.id});
-    setDialogues(result);return result;
+    const [result,deleted]=await Promise.all([
+      request<Dialogue[]>("book_dialogues",{project_id:project.id}),
+      request<Dialogue[]>("trashed_book_dialogues",{project_id:project.id}),
+    ]);
+    setDialogues(result);
+    setDeletedDialogues(deleted);
+    return result;
   },[project.id]);
   useEffect(()=>{
     let active=true;
@@ -91,6 +104,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   },[loadDialogues,project.id,onError]);
   useEffect(()=>{
     if(activeDialogue)localStorage.setItem("noema-dialogue-"+project.id,activeDialogue);
+    else localStorage.removeItem("noema-dialogue-"+project.id);
   },[activeDialogue,project.id]);
   useEffect(()=>{
     if(historyRef.current)historyRef.current.scrollTop=historyRef.current.scrollHeight;
@@ -105,14 +119,34 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   useEffect(()=>{localStorage.setItem("noema-ai-provider",provider)},[provider]);
   const discoverModels=useCallback(async()=>{
     if(!isTauri())return;
+    setOllamaChecking(true);
     try{
       const result=await invoke<{models:LocalModel[];version?:string|null}>("ai_local_models");
-      setLocalModels(result.models||[]);
+      const installed=result.models||[];
+      setLocalModels(installed);
+      localStorage.setItem("noema-ollama-last-seen-models",JSON.stringify(installed));
       setOllamaVersion(result.version||null);
       setOllamaReady(true);
-      setLocalNotice(result.models.length+" installed Ollama model(s) detected.");
-    }catch(e){setLocalModels([]);setOllamaReady(false);setOllamaVersion(null);setLocalNotice(errorText(e))}
+      setLocalNotice(installed.length+" Ollama models found on this computer.");
+    }catch(e){
+      // A disconnected service cannot establish which model files exist.
+      // Keep the last known inventory without claiming any files were deleted.
+      setOllamaReady(false);setOllamaVersion(null);
+      setLocalNotice("Ollama is offline. Your downloaded models have NOT been checked or deleted. Start Ollama to reconnect.");
+    }finally{setOllamaChecking(false)}
   },[]);
+  async function startOllama(){
+    if(ollamaStarting)return;
+    setOllamaStarting(true);
+    setLocalNotice("Launching the existing Ollama app and reconnecting…");
+    try{
+      await invoke("ai_start_ollama");
+      await discoverModels();
+    }catch(e){
+      setOllamaReady(false);
+      setLocalNotice("Couldn't start the Ollama service: "+errorText(e));
+    }finally{setOllamaStarting(false)}
+  }
   useEffect(()=>{if(settings&&provider==="ollama")void discoverModels()},[settings,provider,discoverModels]);
   useEffect(()=>{
     if(!isTauri())return;
@@ -149,6 +183,26 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
       setActiveDialogue(created.id);setCreating(false);setNewTitle("");setNewGoal("");
       setNotice("New dialogue ready. Your book goal remains attached to this conversation.");
       composer.current?.focus();
+    }catch(e){onError(errorText(e))}
+  }
+  async function deleteDialogue(){
+    if(!selectedDialogueForAction || busy)return;
+    const item=selectedDialogueForAction;
+    if(!window.confirm("Delete dialogue “"+item.title+"”? It will disappear from your conversation list. The exchanges remain recoverable in Recently deleted; book chapters are not affected."))return;
+    try{
+      await request("delete_book_dialogue",{project_id:project.id,dialogue_id:item.id});
+      const others=await loadDialogues();
+      setActiveDialogue(others.find(d=>d.id!==item.id)?.id||null);
+      setSettings(false);
+      setNotice("Dialogue moved to Recently deleted. Your book and its writing are unchanged.");
+    }catch(e){onError(errorText(e))}
+  }
+  async function restoreDialogue(dialogueId:string){
+    try{
+      await request("restore_book_dialogue",{project_id:project.id,dialogue_id:dialogueId});
+      await loadDialogues();
+      setActiveDialogue(dialogueId);
+      setNotice("Dialogue restored with its original exchanges.");
     }catch(e){onError(errorText(e))}
   }
   async function updateDialogue(){
@@ -242,6 +296,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     finally{setWorking(null)}
   }
   const selected=dialogues.find(item=>item.id===activeDialogue);
+  const selectedDialogueForAction=selected;
   return <section className="dialogue-workspace" aria-label="Book dialogue workspace">
     <aside className="dialogue-rail" aria-label="Book conversation topics">
       <div className="dialogue-rail-heading">
@@ -256,6 +311,13 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           <strong>{item.title}</strong>
           <small>{item.exchange_count} exchanges · {new Date(item.updated_at).toLocaleDateString()}</small>
         </button>)}
+        {deletedDialogues.length>0&&<details className="dialogue-trashed">
+          <summary>Recently deleted ({deletedDialogues.length})</summary>
+          {deletedDialogues.map(item=><div key={item.id} className="dialogue-trashed-item">
+            <span>{item.title}</span>
+            <button type="button" onClick={()=>void restoreDialogue(item.id)}>Restore</button>
+          </div>)}
+        </details>}
       </div>
       <div className="dialogue-rail-footer">
         <strong>One book, many dialogues</strong>
@@ -273,6 +335,8 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
         <div className="dialogue-header-actions">
           {selected&&!selected.id.startsWith("legacy-")&&<button
             onClick={()=>{setEditTitle(selected.title);setEditGoal(selected.goal);setEditing(true)}}>Edit purpose</button>}
+          {selected&&<button type="button" className="dialogue-delete-button" disabled={busy}
+            onClick={()=>void deleteDialogue()}>Delete dialogue</button>}
           <button aria-expanded={settings} aria-label="Choose AI model" onClick={()=>setSettings(v=>!v)}>⚙ Models</button>
         </div>
       </header>
@@ -314,24 +378,26 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           }}>
             {provider==="openai"?<><option value="gpt-4.1-mini">gpt-4.1-mini</option>
               <option value={models.openai}>{models.openai}</option></>:
-              <>{!isInstalled(models.ollama,localModels)&&<option value={models.ollama}>{models.ollama} · not detected</option>}
-                {localModels.map(m=><option key={m.name} value={m.name}>{m.name} · installed</option>)}</>}
+              <>{(!ollamaReady||!isInstalled(models.ollama,localModels))&&<option value={models.ollama}>{models.ollama} · {ollamaReady?"not installed":"connection offline"}</option>}
+                {localModels.map(m=><option key={m.name} value={m.name}>{m.name} · {ollamaReady?"installed":"previously detected"}</option>)}</>}
           </select></label>
         </div>
         {provider==="ollama"?<>
           <div className="dialogue-model-row"><strong>Available on this computer</strong>
-            <button type="button" disabled={!!pulling} onClick={()=>void discoverModels()}>↻ Scan Ollama inventory</button></div>
+            <button type="button" disabled={!!pulling||ollamaChecking||ollamaStarting} onClick={()=>void discoverModels()}>{ollamaChecking?"Checking…":"↻ Scan Ollama inventory"}</button></div>
+          {!ollamaReady&&<button className="primary" type="button" disabled={ollamaStarting||ollamaChecking}
+            onClick={()=>void startOllama()}>{ollamaStarting?"Starting Ollama…":"Start Ollama & reconnect"}</button>}
           <p className="muted" role="status">{localNotice||"Start Ollama and scan installed models. Alternative storage drives configured through OLLAMA_MODELS are supported."}
           {ollamaReady&&<span> {ollamaVersion?"Ollama "+ollamaVersion+" detected.":"Ollama running (version not reported)."}</span>}</p>
           {localModels.length>0&&<div className="dialogue-installed-models">{localModels.map(m=><button key={m.name}
             onClick={()=>{setModel(old=>({...old,ollama:m.name}));localStorage.setItem("noema-ollama-model",m.name)}}>
-            ● {m.name} {m.size?" · "+(m.size/1024**3).toFixed(1)+" GB":""}
+            ● {m.name} {ollamaReady?"· installed":"· previously detected (offline)"} {m.size?" · "+(m.size/1024**3).toFixed(1)+" GB":""}
             {models.ollama===m.name?" · selected":""}</button>)}</div>}
           <div className="dialogue-model-row"><strong>Discover and download</strong><small>No duplicate download of an already installed model</small></div>
           <div className="dialogue-model-catalog">{localChoices.map(model=><div key={model.id} className="dialogue-model-card">
             <span>{model.label}<small className="dialogue-model-size"> · ~{model.id==="gpt-oss:20b"?"14":model.id==="gemma4:12b"?"8":model.id==="qwen3.5:9b"?"7":"9.3"} GB download</small></span>
             <button type="button" disabled={!ollamaReady||!!pulling} onClick={()=>void pullModel(model.id)}>
-              {isInstalled(model.id,localModels)?"Use installed":pulling===model.id?"Downloading…":"Download"}
+              {!ollamaReady?"Reconnect first":isInstalled(model.id,localModels)?"Use installed":pulling===model.id?"Downloading…":"Download"}
             </button>
           </div>)}</div>
           {(pulling||pullError)&&<div className="dialogue-pull-status" role={pullError?"alert":"status"}>

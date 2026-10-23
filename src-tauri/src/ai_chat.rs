@@ -170,6 +170,46 @@ pub async fn ai_local_models()->Result<Value,String>{
     };
     Ok(json!({"models":models,"version":version,"service":"Ollama","storage":"Ollama's configured model directory"}))
 }
+// Launch the existing Ollama installation only after an explicit user click.
+// No automatic model download, installation or filesystem crawling.
+#[tauri::command]
+pub async fn ai_start_ollama()->Result<Value,String>{
+    let client=Client::builder().timeout(Duration::from_secs(3)).build()
+        .map_err(|e|e.to_string())?;
+    if installed_ollama_models(&client).await.is_ok(){
+        return Ok(json!({"running":true,"started":false}));
+    }
+    #[cfg(target_os="windows")]
+    {
+        use std::path::PathBuf;
+        let local=std::env::var_os("LOCALAPPDATA");
+        let mut candidates:Vec<PathBuf>=Vec::new();
+        if let Some(base)=local{
+            candidates.push(PathBuf::from(base).join("Programs").join("Ollama").join("Ollama.exe"));
+        }
+        // A standalone Ollama CLI may not have a tray application.
+        let mut launched=false;
+        for binary in candidates {
+            if !binary.is_file(){continue;}
+            match std::process::Command::new(&binary).spawn(){
+                Ok(_)=>{launched=true;break;},
+                Err(_)=>continue
+            }
+        }
+        if !launched{
+            return Err("Could not locate the Ollama Windows application. Launch Ollama from the Windows Start menu, then press Scan inventory. NOEMA will not redownload existing models.".into());
+        }
+        for _ in 0..24{
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if installed_ollama_models(&client).await.is_ok(){
+                return Ok(json!({"running":true,"started":true}));
+            }
+        }
+        return Err("Ollama was launched, but its local server at 127.0.0.1:11434 did not respond. Check the Ollama taskbar icon or its server.log, then try Scan inventory.".into());
+    }
+    #[cfg(not(target_os="windows"))]
+    Err("Launch the Ollama application, then scan for installed models.".into())
+}
 #[tauri::command]
 pub async fn ai_pull_model(app:AppHandle,model:String)->Result<Value,String>{
     let model=validated_model(&model)?.to_string();

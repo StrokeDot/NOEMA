@@ -1,6 +1,6 @@
 [package]
 name = "noema"
-version = "0.1.10"
+version = "0.1.11"
 description = "Where Thought Becomes Legacy"
 edition = "2021"
 [lib]
@@ -18,5 +18,6 @@ serde_json = "1"
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 semver = "1"
+tokio = { version = "1", features = ["time"] }
 sha2 = "0.10"
 zip = { version = "9.0.3", default-features = false, features = ["deflate"] }
