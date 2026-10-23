@@ -7,7 +7,6 @@ import { request, errorText } from "./api";
 import type { Project, Chapter, Document, Source } from "./types";
 import Manuscript from "./Editor";
 import LibraryHome from "./LibraryHome";
-import ScriptStudio from "./ScriptStudio";
 import Updates from "./Updates";
 import ChatPanel from "./ChatPanel";
 import WriterProfile from "./WriterProfile";
@@ -16,20 +15,17 @@ import Research, { Search, SourceReader } from "./Research";
 import MemoryView from "./Memory";
 import GemsView from "./Gems";
 import FrameworksView from "./Frameworks";
-import ChannelsView from "./Channels";
 import type { ChannelProfile } from "./types";
 import type { GemDraft } from "./types";
 type View =
-  "Script Studio" | "Dialogue" | "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings" | "Updates" | "Writer Profile" | "Conversation Draft";
+  "Dialogue" | "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Gems" | "Preview" | "Settings" | "Updates" | "Writer Profile" | "Conversation Draft";
 const views: View[] = [
-  "Script Studio",
   "Dialogue",
   "Write",
   "Research",
   "Conversations",
   "Memory",
   "Frameworks",
-  "Channels",
   "Gems",
   "Preview",
   "Writer Profile",
@@ -37,7 +33,7 @@ const views: View[] = [
   "Updates",
   "Settings",
 ];
-const symbols = ["▦", "◉", "✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "♧", "☷", "⟳", "⚙"];
+const symbols = ["◉", "✎", "▤", "☷", "◇", "◈", "❖", "▥", "♧", "☷", "⟳", "⚙"];
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [channels, setChannels] = useState<ChannelProfile[]>([]);
@@ -189,7 +185,7 @@ export default function App() {
     try {
       const selected = import.meta.env.DEV && import.meta.env.VITE_NOEMA_TEST_BRIDGE==="1"
         ? (window as unknown as {__NOEMA_TEST_FILES__?:string[]}).__NOEMA_TEST_FILES__??[]
-        : await open({multiple:true,filters:[{name:"Book and script research",extensions:["txt","md","markdown","json","pdf","docx","epub"]}]});
+        : await open({multiple:true,filters:[{name:"Book research",extensions:["txt","md","markdown","json","pdf","docx","epub"]}]});
       if (!selected) return;
       const files=Array.isArray(selected)?selected:[selected];
       if (!files.length)return;
@@ -300,17 +296,13 @@ export default function App() {
     });
   }
   const isScript = project?.project_type === "Video Script";
-  const workspaceViews = isScript
-    ? views.filter(v => v !== "Write" && v !== "Preview" && v !== "Dialogue")
-    : views.filter(v => v !== "Script Studio" && v !== "Channels");
-  // Retain access to legacy freeform script material without presenting it as a book.
-  if (isScript) workspaceViews.splice(1, 0, "Write", "Preview");
+  const workspaceViews = views;
   const viewLabel = (v: View) => ({
-    "Script Studio": "Video script studio", Dialogue: "Book dialogue", Write: isScript ? "Freeform draft" : "Manuscript",
+    Dialogue: "Book dialogue", Write: isScript ? "Freeform draft" : "Manuscript",
     Research: isScript ? "Script sources" : "Book sources",
     Conversations: isScript ? "Script conversations" : "Conversations",
     Memory: isScript ? "Script memory" : "Project memory", Frameworks: "Core frameworks",
-    Channels: "Channel profiles", Gems: isScript ? "Script gems" : "Writing gems",
+    Gems: isScript ? "Script gems" : "Writing gems",
     Preview: isScript ? "Draft preview" : "Book preview", "Writer Profile": "Writer profile", "Conversation Draft": "Conversation draft", Updates: "Updates", Settings: "Settings",
   }[v]);
   if (boot)
@@ -376,7 +368,7 @@ export default function App() {
               className="new-project"
               onClick={() => setNewProject(true)}
             >
-              + New writing project
+              + New book
             </button>
           </div>
           <nav aria-label="Workspace">
@@ -566,15 +558,6 @@ export default function App() {
                   Create your first writing project
                 </button>
               </div>
-            ) : view === "Script Studio" ? (
-              <ScriptStudio
-                key={project.id}
-                project={project}
-                channelName={channels.find(c=>c.id===project.channel_id)?.name}
-                onFlush={registerFlush}
-                onError={report}
-                onOpenSource={setSource}
-              />
             ) : view === "Write" ? (
               doc ? (
                 <Manuscript
@@ -629,16 +612,6 @@ export default function App() {
               />
             ) : view === "Frameworks" ? (
               <FrameworksView key={project.id} project={project.id} onError={report} />
-            ) : view === "Channels" ? (
-              <ChannelsView
-                channels={channels}
-                projects={projects}
-                currentProject={project}
-                onSaved={reloadChannels}
-                onError={report}
-                onOpenScript={p=>void action(()=>activate(p))}
-                onNewScript={channelId=>{setNewScriptChannel(channelId);setNewProject(true)}}
-              />
             ) : view === "Updates" ? (
               <div className="content-view"><Updates beforeInstall={async()=>await flushRef.current()} onError={report}/></div>
             ) : view === "Writer Profile" ? (
