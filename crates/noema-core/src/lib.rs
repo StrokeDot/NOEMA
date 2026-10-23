@@ -71,7 +71,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 10 {
+        if ver > 11 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -124,6 +124,11 @@ impl Store {
         if ver < 10 {
             let tx=conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v10_author_sources_critique.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 11 {
+            let tx=conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v11_writer_profile_revisions.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -401,13 +406,45 @@ impl Store {
                     params![nid,dimension,claim,now(),now()])?;
                 Ok(json!({"id":nid}))
             }
+            "edit_writer_profile_note" => {
+                let note_id=required(&a,"id")?;
+                let dimension=required(&a,"dimension")?;
+                if !["Writing voice","Reasoning style","Moral framework","Values and beliefs","Working preferences","Other"].contains(&dimension) {
+                    return Err("Unsupported writer profile dimension".into());
+                }
+                let claim=required(&a,"claim")?.trim();
+                if claim.len()>2000{return Err("Profile statement is too long".into());}
+                let tx=self.conn.transaction()?;
+                let old:(String,String,String)=tx.query_row(
+                    "SELECT dimension,claim,state FROM writer_profile_notes WHERE id=?",
+                    params![note_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+                if old.0!=dimension || old.1!=claim || old.2!="Confirmed" {
+                    tx.execute("INSERT INTO writer_profile_revisions(id,note_id,previous_dimension,previous_claim,previous_state,edited_at) VALUES(?,?,?,?,?,?)",
+                        params![id(),note_id,old.0,old.1,old.2,now()])?;
+                    tx.execute("UPDATE writer_profile_notes SET dimension=?,claim=?,state='Confirmed',updated_at=? WHERE id=?",
+                        params![dimension,claim,now(),note_id])?;
+                }
+                tx.commit()?;
+                Ok(json!({"id":note_id,"state":"Confirmed"}))
+            }
+            "writer_profile_history" => rows(&self.conn,
+                "SELECT previous_dimension,previous_claim,previous_state,edited_at FROM writer_profile_revisions WHERE note_id=? ORDER BY edited_at DESC,id DESC LIMIT 100",
+                params![required(&a,"id")?]),
             "review_writer_profile_note" => {
                 let nid=required(&a,"id")?;
                 let state=required(&a,"state")?;
                 if !["Candidate","Confirmed","Rejected"].contains(&state){return Err("Invalid review state".into());}
-                let count=self.conn.execute("UPDATE writer_profile_notes SET state=?,updated_at=? WHERE id=?",
-                    params![state,now(),nid])?;
-                if count!=1{return Err("Writer profile note not found".into());}
+                let tx=self.conn.transaction()?;
+                let old:(String,String,String)=tx.query_row(
+                    "SELECT dimension,claim,state FROM writer_profile_notes WHERE id=?",
+                    params![nid],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+                if old.2!=state {
+                    tx.execute("INSERT INTO writer_profile_revisions(id,note_id,previous_dimension,previous_claim,previous_state,edited_at) VALUES(?,?,?,?,?,?)",
+                        params![id(),nid,old.0,old.1,old.2,now()])?;
+                    tx.execute("UPDATE writer_profile_notes SET state=?,updated_at=? WHERE id=?",
+                        params![state,now(),nid])?;
+                }
+                tx.commit()?;
                 Ok(json!(true))
             }
             "writer_profile_context" => rows(&self.conn,
@@ -944,7 +981,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":10}
+            "path":self.root.to_string_lossy(),"schema":11}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);
