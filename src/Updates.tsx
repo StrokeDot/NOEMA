@@ -58,7 +58,7 @@ export default function Updates({
       await beforeInstall();
       setMessage("Downloading and verifying update, then backing up your writing. Keep NOEMA open until it closes itself.");
       await invoke("update_install",{expectedVersion:newVersion.version});
-    }catch(e){onError(errorText(e));setBusy(false)}
+    }catch(e){onError(errorText(e));setMessage("Update could not be installed. Your current NOEMA and writing were not replaced. Check the error and GitHub access.");setBusy(false)}
   }
   if(!isTauri())return <section><h2>NOEMA updates</h2><p>Private Windows updates are only available inside the installed desktop app.</p></section>;
   return <section className="noema-updater">
@@ -104,6 +104,6 @@ export default function Updates({
     {message&&<p className="notice" role="status">{message}</p>}
     <p className="muted">Security limitation: this updater verifies GitHub Actions artifacts by SHA-256 (optionally authenticated).
       It does not yet verify a Tauri update-signing signature or Windows publisher certificate.
-      Updates require your approval and a working GitHub connection. Never install an unexpected release. For publicly accessible artifacts a token is not needed; if repository visibility changes to private, configure one above.</p>
+      Updates require your approval and a working GitHub connection. Never install an unexpected release. Public build checks may work without a token. GitHub can still require Actions: Read authorization to download an artifact; configure a token above if installation reports HTTP 401 or 403.</p>
   </section>;
 }
