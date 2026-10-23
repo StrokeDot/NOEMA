@@ -496,7 +496,7 @@ impl Store {
                 // This prevents early chapters and long research archives from disappearing
                 // from the assistant's usable evidence as the book grows.
                 let fts_query=terms.iter()
-                    .map(|term|format!("\\\"{}\\\"",term.replace('"',"\\\"\\\"")))
+                    .map(|term|format!(r#""{}""#,term))
                     .collect::<Vec<_>>().join(" OR ");
                 let ranked=if fts_query.is_empty() {json!([])} else {
                     rows(&self.conn,
