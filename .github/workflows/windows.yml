@@ -4,12 +4,23 @@ on:
   push:
     branches: [main]
   pull_request:
+
+# Supersede obsolete PR checks, but never cancel a main-branch release build.
+concurrency:
+  group: noema-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   actions: read
+
 jobs:
-  windows:
-    runs-on: windows-latest
+  # FAST GATE: no NSIS packaging on a pull request.
+  # Every main-branch release must pass this job before the Windows build starts.
+  verify:
+    name: Fast code, book-data and browser checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,39 +28,66 @@ jobs:
           node-version: 24
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache/restore@v4
-        id: rust-cache
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            src-tauri/target
-            crates/noema-core/target
-          key: windows-rust-${{ hashFiles('src-tauri/Cargo.lock', 'crates/noema-core/Cargo.lock') }}
-          restore-keys: windows-rust-
+          workspaces: crates/noema-core -> target
+          cache-on-failure: true
       - run: npm ci
-      - run: npm run build
-      - run: npm test
-      - run: npm run test:core
-      - run: npx playwright install chromium
-      - run: npm run test:e2e
+      - name: Verify TypeScript and frontend build
+        run: npm run build
+      - name: Run UI unit tests
+        run: npm test
+      - name: Test book database, migrations and preservation
+        run: npm run test:core
+      - name: Install Chromium and Linux browser dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Test book library, dialogue and writing in the browser
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: NOEMA-fast-test-failures
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # RELEASE GATE: run only on main or explicit manual dispatch.
+  # The existing filename is required by the NOEMA updater's discovery API.
+  windows:
+    name: Build and upgrade-test the Windows installer
+    needs: verify
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+            crates/noema-core -> target
+          cache-on-failure: true
+      - run: npm ci
       - name: Verify authenticated GitHub update artifact download
         run: node scripts/update-download-smoke.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - name: Remove stale NSIS installers restored from Rust build cache
+      - name: Remove cached NSIS installers before building
         shell: pwsh
         run: |
           $nsis = "src-tauri/target/release/bundle/nsis"
           if (Test-Path $nsis) {
             Get-ChildItem -Path $nsis -Filter "*.exe" -File | Remove-Item -Force
           }
-      - run: npm run tauri build
-      - uses: actions/cache/save@v4
-        if: steps.rust-cache.outputs.cache-hit != 'true'
-        with:
-          path: |
-            src-tauri/target
-            crates/noema-core/target
-          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
+      # Tauri builds the frontend itself via beforeBuildCommand; no redundant
+      # frontend compilation, core tests or browser tests in the release job.
+      - name: Build Windows NSIS installer
+        run: npm run tauri build
       - uses: actions/upload-artifact@v4
         with:
           name: NOEMA-0.1.11-Windows-installer
@@ -62,15 +100,15 @@ jobs:
           run-id: 38858899633
           github-token: ${{ github.token }}
           path: baseline-installer
-      - name: Install, upgrade, and reopen the Windows application
+      - name: Install, upgrade and reopen Windows app; preserve manuscripts
         run: node scripts/windows-smoke.mjs
         env:
           NOEMA_BASELINE_DIR: ${{ github.workspace }}/baseline-installer
         timeout-minutes: 5
-      - name: Upload verification evidence
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: NOEMA-Windows-verification
           path: test-results/
           if-no-files-found: warn
+          retention-days: 14
