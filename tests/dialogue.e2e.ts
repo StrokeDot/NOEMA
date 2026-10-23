@@ -5,9 +5,9 @@ test("book dialogue keeps separate conversation purposes and preserves them afte
   page.on("pageerror",e=>errors.push(e.message));
   await page.goto("/");
   const project=page.getByRole("dialog",{name:"New writing project"});
-  if(!(await project.isVisible())){
-    await page.getByRole("button",{name:"+ New writing project"}).click();
-  }
+  // A fresh browser test database starts with this onboarding dialog;
+  // wait for initialization instead of clicking behind a transitioning overlay.
+  await expect(project).toBeVisible();
   await project.getByRole("button",{name:"Book project",exact:false}).click();
   await project.getByLabel("Book title",{exact:true}).fill("Dialogue-first book");
   await project.getByLabel("Author",{exact:true}).fill("Author");
