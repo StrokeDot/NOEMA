@@ -118,16 +118,65 @@ fn same_ollama_model(a:&str,b:&str)->bool{
     };
     normalize(a)==normalize(b)
 }
+// Ollama emits newline-delimited JSON. HTTP chunks can split UTF-8 characters
+// or JSON records; parse complete records from a byte buffer instead.
+fn pull_events(pending:&mut Vec<u8>,chunk:&[u8],eof:bool)->Result<Vec<Value>,String>{
+    const MAX_LINE:usize=128*1024;
+    let mut events=Vec::new();
+    for part in chunk.split_inclusive(|byte|*byte==b'\n') {
+        pending.extend_from_slice(part);
+        if pending.len()>MAX_LINE {
+            return Err("Ollama sent an unexpectedly large progress event".into());
+        }
+        if pending.last()==Some(&b'\n'){
+            if !pending.iter().all(|c|c.is_ascii_whitespace()){
+                events.push(serde_json::from_slice::<Value>(pending)
+                    .map_err(|_|"Ollama returned malformed download progress".to_string())?);
+            }
+            pending.clear();
+        }
+    }
+    if eof && !pending.is_empty(){
+        if !pending.iter().all(|c|c.is_ascii_whitespace()){
+            events.push(serde_json::from_slice::<Value>(pending)
+                .map_err(|_|"Ollama ended with malformed progress".to_string())?);
+        }
+        pending.clear();
+    }
+    Ok(events)
+}
+#[cfg(test)]
+mod pull_parser_tests {
+    use super::*;
+    #[test]
+    fn accepts_split_utf8_and_last_event_without_newline(){
+        let mut buf=Vec::new();
+        let raw=concat!(r#"{"status":"pulling café"}"#,"\n",r#"{"status":"success"}"#);
+        let bytes=raw.as_bytes();
+        let cut=bytes.iter().position(|c|*c==0xC3).unwrap()+1;
+        assert!(pull_events(&mut buf,&bytes[..cut],false).unwrap().is_empty());
+        let values=pull_events(&mut buf,&bytes[cut..],true).unwrap();
+        assert_eq!(values[0]["status"],"pulling café");
+        assert_eq!(values[1]["status"],"success");
+    }
+}
 #[tauri::command]
 pub async fn ai_local_models()->Result<Value,String>{
     let client=Client::builder().timeout(Duration::from_secs(12)).build().map_err(|e|e.to_string())?;
     let models=installed_ollama_models(&client).await?;
-    Ok(json!({"models":models,"service":"Ollama","storage":"Ollama's configured model directory"}))
+    let version=match client.get("http://127.0.0.1:11434/api/version").send().await {
+        Ok(r)=>r.json::<Value>().await.ok().and_then(|v|v["version"].as_str().map(str::to_string)),
+        Err(_)=>None
+    };
+    Ok(json!({"models":models,"version":version,"service":"Ollama","storage":"Ollama's configured model directory"}))
 }
 #[tauri::command]
 pub async fn ai_pull_model(app:AppHandle,model:String)->Result<Value,String>{
     let model=validated_model(&model)?.to_string();
-    let client=Client::builder().timeout(Duration::from_secs(60*60)).build().map_err(|e|e.to_string())?;
+    let client=Client::builder()
+        .connect_timeout(Duration::from_secs(25))
+        .timeout(Duration::from_secs(60*60*6))
+        .build().map_err(|e|e.to_string())?;
     let installed=installed_ollama_models(&client).await?;
     if installed.iter().any(|item|{
         item["name"].as_str().or_else(||item["model"].as_str())
@@ -142,28 +191,31 @@ pub async fn ai_pull_model(app:AppHandle,model:String)->Result<Value,String>{
         let error=response.text().await.unwrap_or_default();
         return Err(format!("Ollama refused to download {model}: {}",error.chars().take(350).collect::<String>()));
     }
-    let mut buffer=String::new();
+    let mut pending=Vec::new();
     let mut finished=false;
-    while let Some(chunk)=response.chunk().await.map_err(|e|format!("Model download interrupted: {e}"))? {
-        let text=std::str::from_utf8(&chunk).map_err(|_|"Unexpected Ollama progress data".to_string())?;
-        buffer.push_str(text);
-        if buffer.len()>100_000 {return Err("Ollama progress message exceeds the safety limit".into());}
-        while let Some(end)=buffer.find('\n'){
-            let line=buffer[..end].trim().to_string();
-            buffer.drain(..=end);
-            if line.is_empty(){continue;}
-            let event:Value=serde_json::from_str(&line).map_err(|_|"Invalid Ollama progress event".to_string())?;
-            if let Some(err)=event["error"].as_str(){return Err(format!("Ollama download failed: {err}"));}
-            let status=event["status"].as_str().unwrap_or("Downloading");
-            if status=="success"{finished=true;}
+    let mut last_status=String::from("connecting to Ollama");
+    loop {
+        let chunk=response.chunk().await
+            .map_err(|e|format!("Download of {model} stopped while {last_status}: {e}. Check network, disk space and Ollama logs; retrying resumes existing layers."))?;
+        let at_end=chunk.is_none();
+        let events=pull_events(&mut pending,chunk.as_deref().unwrap_or_default(),at_end)?;
+        for event in events {
+            if let Some(err)=event["error"].as_str(){
+                return Err(format!("{model}: Ollama failed while {last_status}: {err}. Check disk space and Ollama version."));
+            }
+            last_status=event["status"].as_str().unwrap_or("downloading model").to_string();
+            if last_status=="success"{finished=true;}
             let _=app.emit("noema-model-download-progress",json!({
-                "model":model,"status":status,
+                "model":model,"status":last_status,
                 "completed":event["completed"].as_u64().unwrap_or(0),
                 "total":event["total"].as_u64().unwrap_or(0)
             }));
         }
+        if at_end {break;}
     }
-    if !finished {return Err("Ollama ended the transfer without confirming a successful installation".into());}
+    if !finished {
+        return Err(format!("{model}: Ollama ended while {last_status} without confirming success. Check storage, Ollama logs and retry."));
+    }
     let installed=installed_ollama_models(&client).await?;
     if !installed.iter().any(|item|{
         item["name"].as_str().or_else(||item["model"].as_str())
