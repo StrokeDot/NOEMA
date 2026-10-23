@@ -1315,3 +1315,81 @@ padding:10px;background:var(--paper);min-width:0;}
 @media(max-width:850px){.dialogue-rail{width:160px;flex-basis:160px}.dialogue-rail-footer p{display:none}.dialogue-rail-heading{padding:12px 8px}.dialogue-thread-list{padding:3px 6px}.dialogue-topline{padding:12px 15px}.dialogue-topline p{max-width:320px}.dialogue-model-drawer{padding:14px}}
 @media(max-width:600px){.dialogue-rail{width:66px;flex-basis:66px}.dialogue-rail-heading .eyebrow,.dialogue-rail-footer{display:none}.dialogue-rail-heading .primary{font-size:0;padding:10px}.dialogue-rail-heading .primary::after{content:"+";font-size:18px}.dialogue-thread{padding:10px 6px}.dialogue-thread strong{font-size:10px;white-space:normal;overflow:hidden;max-height:40px}.dialogue-thread small{display:none}.dialogue-header-actions{flex-wrap:wrap;justify-content:flex-end}.dialogue-topline h2{font-size:16px}.dialogue-topline .eyebrow{display:none}.dialogue-topline p{font-size:10px}.dialogue-model-grid{grid-template-columns:1fr}.dialogue-transcript{padding:16px 12px}.dialogue-composer-wrap{padding:9px}.dialogue-author-message{max-width:96%}.dialogue-response-body{min-width:0}.dialogue-composer-hint{display:none}}
 @media(prefers-reduced-motion:reduce){.dialogue-exchange,.dialogue-welcome,.dialogue-dots i{animation:none!important}.dialogue-transcript{scroll-behavior:auto!important}}
+
+
+/* NOEMA living room: a deliberate, quiet landing place before entering a book. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.book-library{min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--ink);overflow-y:auto}
+.book-library-topbar{height:79px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 clamp(24px,5vw,80px);background:var(--paper)}
+.book-library-brand{display:flex;gap:13px;align-items:center}
+.book-library-mark{width:37px;height:43px;display:grid;place-items:center;font:italic 27px Georgia,serif;border:1px solid var(--accent);border-radius:3px 8px 8px 3px;color:var(--accent);box-shadow:inset 4px 0 var(--accent-soft)}
+.book-library-brand strong{font:600 21px Georgia,serif;letter-spacing:.19em;display:block}
+.book-library-brand span{display:block;font-size:9px;letter-spacing:.17em;color:var(--muted);margin-top:5px}
+.book-library-top-actions{display:flex;align-items:center;gap:12px}
+.book-library-top-actions button{border-radius:10px;padding:9px 12px}
+.book-library-local{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--muted);margin-right:7px}
+.library-update-pill{font-size:10px;line-height:1;padding:4px 6px;background:var(--accent-soft);color:var(--accent);border-radius:5px;margin-left:3px}
+.book-library-content{max-width:1340px;margin:0 auto;padding:58px clamp(22px,5vw,74px) 30px}
+.book-library-hero{background:linear-gradient(111deg,#20372b,#304737 63%,#496048);border-radius:20px;padding:clamp(33px,4vw,56px);position:relative;overflow:hidden;isolation:isolate;color:#f4f3e8;min-height:248px;box-shadow:0 17px 35px #132e1e17}
+.book-library-hero:before{position:absolute;right:-45px;bottom:-150px;width:440px;height:440px;border:1px solid #faf7ed1c;border-radius:50%;content:"";box-shadow:0 0 0 55px #f8f8e808,0 0 0 115px #f8f8e805;z-index:-1}
+.book-library-hero .eyebrow{color:#c5dac0;font-size:11px;letter-spacing:.16em}
+.book-library-hero h1{font:normal clamp(30px,4vw,51px) Georgia,serif;letter-spacing:-.03em;margin:14px 0 13px}
+.book-library-hero h1 span{color:#b6c99c}
+.book-library-hero p{font-size:14px;line-height:1.75;color:#d7dfd5;max-width:650px;margin:0}
+.book-library-hero-actions{display:flex;gap:22px;align-items:center;margin-top:24px;flex-wrap:wrap}
+.book-library-hero-actions .primary{background:#ecf0df;color:#23402a;border-color:#ecf0df;border-radius:10px;padding:13px 19px}
+.book-library-hero-actions .primary:hover{background:#dfe9d3}
+.book-library-hero-actions span{font-size:12px;color:#d0daca}
+.book-library-section{margin-top:47px}
+.book-library-section-head{display:flex;align-items:end;justify-content:space-between;gap:20px;margin-bottom:21px;flex-wrap:wrap}
+.book-library-section-head .eyebrow{font-size:10px;margin-bottom:7px}
+.book-library-section-head h2{font:normal 28px Georgia,serif;margin:0}
+.book-library-controls{display:flex;align-items:center;gap:9px}
+.book-library-controls input{max-width:230px}
+.book-library-controls select{max-width:185px}
+.book-library-controls input,.book-library-controls select{border-radius:10px;font-size:12px;padding:11px 12px}
+.book-library-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:17px}
+.book-library-card{padding:0;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--paper);text-align:left;display:flex;flex-direction:column;min-width:0;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.book-library-card:hover{background:var(--paper);transform:translateY(-4px);box-shadow:0 16px 34px #1935201c;border-color:var(--accent)}
+.book-library-cover{height:213px;padding:26px 25px 18px;display:flex;flex-direction:column;align-items:flex-start;position:relative;color:#f6f5ea;background:#2c4a3d;overflow:hidden;border-left:10px solid #ffffff19}
+.book-library-cover:before{position:absolute;content:"";border:1px solid #ffffff2b;inset:12px 14px 12px 9px;pointer-events:none}
+.book-cover-0{background:#274537}.book-cover-1{background:#5f5a4d}.book-cover-2{background:#443f58}.book-cover-3{background:#634d43}.book-cover-4{background:#365868}
+.book-cover-line{height:2px;width:39px;background:#d6cba0;margin-bottom:21px}
+.book-cover-emblem{font:31px Georgia,serif;color:#d4d7be;line-height:1;margin-bottom:14px}
+.book-cover-title{font:normal 23px/1.2 Georgia,serif;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;max-width:220px;position:relative}
+.book-cover-author{font-size:11px;letter-spacing:.06em;margin-top:10px;color:#f5f2ded6}
+.book-cover-footer{font-size:9px;letter-spacing:.19em;opacity:.55;margin-top:auto}
+.book-library-card-details{padding:18px 20px 17px;display:flex;flex-direction:column;gap:5px;flex:1}
+.book-library-book-tag{font-size:9px;letter-spacing:.14em;font-weight:700;color:var(--accent)}
+.book-library-card-details h3{font:normal 19px/1.35 Georgia,serif;margin:6px 0 2px;overflow-wrap:anywhere}
+.book-library-card-details p{font-size:12px;line-height:1.6;color:var(--muted);margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.book-library-card-foot{display:flex;justify-content:space-between;gap:10px;align-items:center;border-top:1px solid var(--line);padding-top:14px;margin-top:auto;font-size:11px;color:var(--muted)}
+.book-library-card-foot span:last-child{color:var(--accent);font-weight:600;white-space:nowrap}
+.book-library-new{min-height:405px;border:1px dashed var(--accent);border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;padding:25px;text-align:center;background:transparent;color:var(--ink);transition:background .2s}
+.book-library-new:hover{background:var(--accent-soft)}
+.book-library-new-icon{display:grid;place-items:center;width:68px;height:86px;border:1px solid var(--accent);border-radius:4px 11px 11px 4px;color:var(--accent);font-size:35px;font-weight:200;margin-bottom:13px}
+.book-library-new strong{font:normal 23px Georgia,serif}
+.book-library-new>span:last-child{font-size:12px;line-height:1.5;color:var(--muted)}
+.book-library-empty{text-align:center;border:1px dashed var(--line);border-radius:16px;padding:45px 20px;margin-top:18px}
+.book-library-empty>span{font-size:35px;color:var(--accent)}
+.book-library-empty h3{font:normal 23px Georgia,serif;margin:11px 0}
+.book-library-empty p{color:var(--muted);font-size:13px}
+.book-library-footer{margin-top:58px;padding:20px 0;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:15px;color:var(--muted);font-size:11px}
+.book-library-footer div{display:flex;gap:10px;align-items:center}
+.book-library-footer div::first-letter{color:var(--accent)}
+.book-library-footer>span{letter-spacing:.13em;font-size:10px}
+.book-library-legacy-note{font-size:11px;color:var(--muted);margin:0 0 12px}
+.book-library-updates{padding:40px clamp(22px,6vw,80px);max-width:1080px;margin:0 auto;min-height:100vh}
+.book-library-updates>.row{margin-bottom:25px;display:flex;align-items:center;justify-content:space-between}
+.book-library-updates h1{font:normal 28px Georgia,serif}
+.book-library-updates>.noema-updater{max-width:800px}
+@media(max-width:760px){
+  .book-library-topbar{padding:0 16px;height:72px}.book-library-brand strong{font-size:18px}
+  .book-library-local{display:none}.book-library-content{padding:25px 16px}
+  .book-library-hero{padding:29px 22px;min-height:235px}
+  .book-library-section{margin-top:30px}
+  .book-library-section-head{align-items:flex-start}
+  .book-library-controls{width:100%}.book-library-controls label:first-child{flex:1}.book-library-controls input{max-width:none;width:100%}
+  .book-library-controls select{max-width:155px}.book-library-grid{grid-template-columns:repeat(auto-fill,minmax(205px,1fr))}
+}
+@media(prefers-reduced-motion:reduce){.book-library-card{transition:none}.book-library-card:hover{transform:none}}
