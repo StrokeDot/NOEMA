@@ -71,7 +71,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 10 {
+        if ver > 11 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -124,6 +124,11 @@ impl Store {
         if ver < 10 {
             let tx=conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v10_author_sources_critique.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 11 {
+            let tx=conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v11_writer_profile_revisions.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -334,6 +339,7 @@ impl Store {
                 let answer=required(&a,"assistant_response")?;
                 if interpreted.len()>100_000 || answer.len()>100_000 {return Err("AI writing exceeds the size limit".into());}
                 let critique=string(&a,"critical_review").trim();
+                if critique.is_empty(){return Err("An independent critique must accompany every completed AI response.".into());}
                 if critique.len()>100_000{return Err("Critical review is too long".into());}
                 let suggestions=a["profile_suggestions"].as_array().cloned().unwrap_or_default();
                 let draft=a["draft_candidate"].as_str().unwrap_or("").trim();
@@ -401,13 +407,45 @@ impl Store {
                     params![nid,dimension,claim,now(),now()])?;
                 Ok(json!({"id":nid}))
             }
+            "edit_writer_profile_note" => {
+                let note_id=required(&a,"id")?;
+                let dimension=required(&a,"dimension")?;
+                if !["Writing voice","Reasoning style","Moral framework","Values and beliefs","Working preferences","Other"].contains(&dimension) {
+                    return Err("Unsupported writer profile dimension".into());
+                }
+                let claim=required(&a,"claim")?.trim();
+                if claim.len()>2000{return Err("Profile statement is too long".into());}
+                let tx=self.conn.transaction()?;
+                let old:(String,String,String)=tx.query_row(
+                    "SELECT dimension,claim,state FROM writer_profile_notes WHERE id=?",
+                    params![note_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+                if old.0!=dimension || old.1!=claim || old.2!="Confirmed" {
+                    tx.execute("INSERT INTO writer_profile_revisions(id,note_id,previous_dimension,previous_claim,previous_state,edited_at) VALUES(?,?,?,?,?,?)",
+                        params![id(),note_id,old.0,old.1,old.2,now()])?;
+                    tx.execute("UPDATE writer_profile_notes SET dimension=?,claim=?,state='Confirmed',updated_at=? WHERE id=?",
+                        params![dimension,claim,now(),note_id])?;
+                }
+                tx.commit()?;
+                Ok(json!({"id":note_id,"state":"Confirmed"}))
+            }
+            "writer_profile_history" => rows(&self.conn,
+                "SELECT previous_dimension,previous_claim,previous_state,edited_at FROM writer_profile_revisions WHERE note_id=? ORDER BY edited_at DESC,id DESC LIMIT 100",
+                params![required(&a,"id")?]),
             "review_writer_profile_note" => {
                 let nid=required(&a,"id")?;
                 let state=required(&a,"state")?;
                 if !["Candidate","Confirmed","Rejected"].contains(&state){return Err("Invalid review state".into());}
-                let count=self.conn.execute("UPDATE writer_profile_notes SET state=?,updated_at=? WHERE id=?",
-                    params![state,now(),nid])?;
-                if count!=1{return Err("Writer profile note not found".into());}
+                let tx=self.conn.transaction()?;
+                let old:(String,String,String)=tx.query_row(
+                    "SELECT dimension,claim,state FROM writer_profile_notes WHERE id=?",
+                    params![nid],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+                if old.2!=state {
+                    tx.execute("INSERT INTO writer_profile_revisions(id,note_id,previous_dimension,previous_claim,previous_state,edited_at) VALUES(?,?,?,?,?,?)",
+                        params![id(),nid,old.0,old.1,old.2,now()])?;
+                    tx.execute("UPDATE writer_profile_notes SET state=?,updated_at=? WHERE id=?",
+                        params![state,now(),nid])?;
+                }
+                tx.commit()?;
                 Ok(json!(true))
             }
             "writer_profile_context" => rows(&self.conn,
@@ -492,22 +530,38 @@ impl Store {
                 let positions=rows(&self.conn,
                     "SELECT category,title,substr(body,1,2500) AS body FROM memories WHERE project_id=? AND category IN ('Established Positions','Writing Instructions') ORDER BY updated_at DESC LIMIT 30",
                     params![pid])?;
-                let source_rows=rows(&self.conn,
-                    "SELECT p.id,s.id AS source_id,s.name,s.role,s.source_origin,s.use_guidance,s.working_document,p.location,substr(p.text,1,2500) AS text FROM passages p JOIN sources s ON s.id=p.source_id WHERE p.project_id=? ORDER BY p.id DESC LIMIT 1500",
+                // FTS searches the whole project, not just its newest 1500 passages.
+                // This prevents early chapters and long research archives from disappearing
+                // from the assistant's usable evidence as the book grows.
+                let fts_query=terms.iter()
+                    .map(|term|format!(r#""{}""#,term))
+                    .collect::<Vec<_>>().join(" OR ");
+                let ranked=if fts_query.is_empty() {json!([])} else {
+                    rows(&self.conn,
+                        "SELECT p.id,s.id AS source_id,s.name,s.role,s.source_origin,s.use_guidance,s.working_document,p.location,substr(p.text,1,2500) AS text FROM passage_fts JOIN passages p ON p.id=passage_fts.rowid JOIN sources s ON s.id=p.source_id WHERE passage_fts MATCH ? AND p.project_id=? ORDER BY rank LIMIT 80",
+                        params![fts_query,pid])?
+                };
+                // Include the current writing document even when the author's newest
+                // question doesn't repeat its keywords.
+                let working=rows(&self.conn,
+                    "SELECT p.id,s.id AS source_id,s.name,s.role,s.source_origin,s.use_guidance,s.working_document,p.location,substr(p.text,1,2500) AS text FROM passages p JOIN sources s ON s.id=p.source_id WHERE p.project_id=? AND s.working_document=1 ORDER BY p.id DESC LIMIT 2",
                     params![pid])?;
-                let mut ranked:Vec<(usize,Value)>=source_rows.as_array().unwrap().iter().filter_map(|v|{
-                    let txt=v["text"].as_str().unwrap_or("").to_lowercase();
-                    let label=v["name"].as_str().unwrap_or("").to_lowercase();
-                    let score=terms.iter().filter(|word|txt.contains(word.as_str())||label.contains(word.as_str())).count();
-                    if score>0 {Some((score,v.clone()))} else {None}
-                }).collect();
-                ranked.sort_by(|a,b|b.0.cmp(&a.0));
-                let working:Vec<Value>=source_rows.as_array().unwrap().iter()
-                    .filter(|v|v["working_document"]==1).take(5).cloned().collect();
-                let mut passages:Vec<Value>=working;
-                for (_,entry) in ranked.into_iter() {
+                let mut passages:Vec<Value>=working.as_array().unwrap().clone();
+                let ranked=ranked.as_array().unwrap();
+                // Relevant writer materials and opposing/reference materials each get
+                // an opportunity to appear; neither is treated as a confirmed belief.
+                for origin in ["Author","External"] {
+                    if let Some(entry)=ranked.iter().find(|entry|
+                        entry["source_origin"]==origin &&
+                        !passages.iter().any(|existing|existing["id"]==entry["id"])) {
+                        passages.push(entry.clone());
+                    }
+                }
+                for entry in ranked {
                     if passages.len()>=12{break;}
-                    if !passages.iter().any(|existing|existing["id"]==entry["id"]){passages.push(entry);}
+                    if !passages.iter().any(|existing|existing["id"]==entry["id"]){
+                        passages.push(entry.clone());
+                    }
                 }
                 let recent=rows(&self.conn,
                     "SELECT role,substr(content,1,12000) AS content FROM (SELECT role,content,created_at,id FROM project_chat_messages WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 14) ORDER BY created_at,id",
@@ -928,7 +982,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":10}
+            "path":self.root.to_string_lossy(),"schema":11}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);

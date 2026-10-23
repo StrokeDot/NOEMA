@@ -64,10 +64,10 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
     },
     [resolve("tests/fixtures/research.pdf")],
   );
-  await expect(page.getByRole("button",{name:"Upload my own sources"})).toBeVisible();
-  await expect(page.getByRole("button",{name:"Upload books & research"})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Upload Writer Sources"})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Upload Reference Sources"})).toBeVisible();
   await page
-    .getByRole("button", { name: "+ Attach source files", exact: true })
+    .getByRole("button", { name: "+ Add reference", exact: true })
     .click();
   await expect(
     page.getByText("1 file(s) imported.", { exact: true }),

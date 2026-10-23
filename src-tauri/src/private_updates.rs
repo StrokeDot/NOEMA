@@ -10,7 +10,7 @@ use semver::Version;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, process::Command, time::Duration};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const OWNER_REPO: &str = "StrokeDot/NOEMA";
 const WORKFLOW: &str = "windows.yml";
@@ -200,7 +200,7 @@ pub async fn update_install(
     }
     let id=info["artifact_id"].as_u64().ok_or("Missing artifact ID")?;
     let url=api(&format!("actions/artifacts/{id}/zip"));
-    let response=artifact_download_request(&client, &token, &url)
+    let mut response=artifact_download_request(&client, &token, &url)
         .timeout(Duration::from_secs(120)).send().await
         .map_err(|e|format!("Update download failed: {e}"))?;
     if !response.status().is_success() {
@@ -208,8 +208,27 @@ pub async fn update_install(
         return Err(format!("GitHub download failed: HTTP {} (host {}).",
             response.status(),response.url().host_str().unwrap_or("unknown")));
     }
-    let bytes=response.bytes().await.map_err(|_|"Update download was interrupted.".to_string())?;
-    if bytes.len()>MAX_ZIP_BYTES {return Err("Downloaded update is unexpectedly large.".into());}
+    let total=response.content_length();
+    if total.is_some_and(|size|size>MAX_ZIP_BYTES as u64) {
+        return Err("Downloaded update is unexpectedly large.".into());
+    }
+    let mut bytes=Vec::new();
+    let mut downloaded=0_u64;
+    let _=app.emit("noema-update-progress",json!({
+        "stage":"Downloading update","downloaded":downloaded,"total":total
+    }));
+    while let Some(chunk)=response.chunk().await
+        .map_err(|_|"Update download was interrupted.".to_string())? {
+        downloaded=downloaded.saturating_add(chunk.len() as u64);
+        if downloaded>MAX_ZIP_BYTES as u64 {
+            return Err("Downloaded update is unexpectedly large.".into());
+        }
+        bytes.extend_from_slice(&chunk);
+        let _=app.emit("noema-update-progress",json!({
+            "stage":"Downloading update","downloaded":downloaded,"total":total
+        }));
+    }
+    let _=app.emit("noema-update-progress",json!({"stage":"Verifying update"}));
     let expected=info["digest"].as_str().ok_or("Missing artifact digest")?
         .strip_prefix("sha256:").ok_or("GitHub did not supply a SHA-256 digest")?;
     let computed=format!("{:x}",Sha256::digest(&bytes));
@@ -217,6 +236,7 @@ pub async fn update_install(
     let installer_name=format!("NOEMA_{}_x64-setup.exe",requested);
     let installer=archive_installer(&bytes,&installer_name)?;
 
+    let _=app.emit("noema-update-progress",json!({"stage":"Backing up your writing"}));
     // Before any installed files are changed, make a complete local archive backup.
     let backup_path={
         let mut store=db.lock().map_err(|_|"NOEMA cannot prepare the archive backup.".to_string())?;
@@ -232,13 +252,22 @@ pub async fn update_install(
     let exe=dir.join(&installer_name);
     fs::write(&exe,&installer).map_err(|e|format!("Cannot write downloaded update: {e}"))?;
     let ps=dir.join(format!("install-noema-{}.ps1",requested));
+    let app_exe=std::env::current_exe()
+        .map_err(|e|format!("Could not locate the installed NOEMA application: {e}"))?;
+    let is_noema=app_exe.file_name()
+        .and_then(|n|n.to_str())
+        .is_some_and(|name|name.eq_ignore_ascii_case("NOEMA.exe"));
+    if !is_noema {
+        return Err("The updater requires a normal installed NOEMA executable.".into());
+    }
     // Launch installation after NOEMA exits so NSIS can replace the executable.
     // Never accept an arbitrary command or download URL from frontend input.
     let contents=format!(
-        "$ErrorActionPreference='Stop'\nStart-Sleep -Seconds 3\nStart-Process -FilePath {} -ArgumentList '/S' -Wait\n",
-        ps_literal(&exe)
+        "$ErrorActionPreference='Stop'\nStart-Sleep -Seconds 3\n$installer=Start-Process -FilePath {} -ArgumentList '/S' -Wait -PassThru\nif ($installer.ExitCode -ne 0) {{ throw 'NOEMA update installer failed' }}\nStart-Sleep -Seconds 2\nif (Test-Path -LiteralPath {}) {{ Start-Process -FilePath {} }}\n",
+        ps_literal(&exe),ps_literal(&app_exe),ps_literal(&app_exe)
     );
     fs::write(&ps,contents).map_err(|e|format!("Cannot prepare update installer: {e}"))?;
+    let _=app.emit("noema-update-progress",json!({"stage":"Installing and restarting NOEMA"}));
     Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass",
         "-WindowStyle","Hidden","-File"]).arg(&ps).spawn()
         .map_err(|e|format!("Could not start update installer: {e}"))?;
