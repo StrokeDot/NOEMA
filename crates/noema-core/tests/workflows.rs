@@ -284,7 +284,7 @@ fn backup_reopens_and_migration_is_repeatable() {
         b.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        10
+        11
     );
 }
 #[test]
@@ -355,7 +355,7 @@ fn book_gems_persist_preserve_original_and_isolate_books() {
     assert_eq!(gem[0]["origin"],"AI Assistant");
     assert_eq!(gem[0]["source_label"],"Conversation 12");
     assert_eq!(gem[0]["status"],"Approved");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),10);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),11);
     call(&mut store,"delete_gem",json!({"project_id":a,"id":id}));
     assert_eq!(call(&mut store,"gems",json!({"project_id":a})),json!([]));
     assert_eq!(store.conn.query_row("SELECT count(*) FROM book_gems WHERE id=?",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
@@ -426,7 +426,7 @@ fn scripts_and_reusable_frameworks_respect_project_activation() {
         "perspective":"External","principles":"Different premises","status":"Draft"}));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})),json!([]));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":book})),json!([]));
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),10);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),11);
 }
 
 #[test]
@@ -484,7 +484,7 @@ fn channel_profiles_group_scripts_and_references_respect_opt_in() {
     let mut reopened=Store::open(dir.path()).unwrap();
     assert_eq!(call(&mut reopened,"channel_scripts",json!({"channel_id":channel_b}))[0]["script_status"],"Published");
     assert_eq!(call(&mut reopened,"channels",json!({})).as_array().unwrap().len(),2);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),10);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),11);
 }
 #[test]
 fn legacy_script_migrates_without_losing_its_manuscript() {
@@ -545,7 +545,7 @@ fn video_cues_preserve_separate_narration_visuals_sources_and_revisions() {
     assert_eq!(cue["visuals"],"Slow close-up on Arthur");
     assert_eq!(cue["source_locator"],"RDR2 bench scene");
     assert_eq!(cue["planned_seconds"],15);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),10);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),11);
     call(&mut reopened,"delete_script_cue",json!({"project_id":script,"id":cid}));
     assert_eq!(call(&mut reopened,"script_cues",json!({"project_id":script})).as_array().unwrap().len(),1);
     let retained:i64=reopened.conn.query_row("SELECT count(*) FROM script_cues WHERE id=?",[cid],|r|r.get(0)).unwrap();
@@ -684,7 +684,7 @@ fn v9_conversation_preserves_original_and_requires_writer_confirmation() {
     let mut store=Store::open(tmp.path()).unwrap();
     let book=project(&mut store,"The Book");
     let other=project(&mut store,"Different Book");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),10);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),11);
     let original="I don't have the full idea but I feel what responsibility mean, in the moment.";
     let turn=call(&mut store,"begin_writing_turn",json!({"project_id":book,"original_text":original}))["id"]
         .as_str().unwrap().to_string();
@@ -757,7 +757,7 @@ fn author_and_external_sources_are_isolated_and_critical_review_requires_acknowl
     let mut store=Store::open(dir.path().join("data")).unwrap();
     let book=project(&mut store,"Author's first book");
     let other=project(&mut store,"Other author's book");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),10);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),11);
     let author_source=dir.path().join("author.md");
     let external_source=dir.path().join("external.md");
     fs::write(&author_source,"The author proposes an early argument about moral freedom.").unwrap();
@@ -793,4 +793,89 @@ fn author_and_external_sources_are_isolated_and_critical_review_requires_acknowl
     assert_eq!(call(&mut reopened,"writing_turns",json!({"project_id":book}))[0]["critique_explored"],1);
     assert_eq!(call(&mut reopened,"sources",json!({"project_id":book}))
         .as_array().unwrap().iter().find(|x|x["id"]==ownid).unwrap()["source_origin"],"Author");
+}
+
+#[test]
+fn writer_profile_corrections_are_approved_and_audited_without_changing_evidence() {
+    let tmp=tempfile::tempdir().unwrap();
+    let mut store=Store::open(tmp.path()).unwrap();
+    let book=project(&mut store,"Thoughtful essays");
+    let statement="I want a serious critic, not someone who only agrees with me.";
+    let tid=call(&mut store,"begin_writing_turn",
+        json!({"project_id":book,"original_text":statement}))["id"]
+        .as_str().unwrap().to_string();
+    call(&mut store,"complete_writing_turn",json!({
+        "project_id":book,"turn_id":tid,"original_evidence":statement,
+        "interpreted_text":statement,"assistant_response":"Your arguments should be examined.",
+        "critical_review":"Counterarguments still matter.","provider":"ollama","model":"test",
+        "profile_suggestions":[{
+            "dimension":"Reasoning style",
+            "claim":"The writer expects total agreement.",
+            "evidence_quote":"a serious critic, not someone who only agrees"
+        }],
+        "draft_candidate":""
+    }));
+    let profile=call(&mut store,"writer_profile",json!({}));
+    assert_eq!(profile[0]["state"],"Candidate");
+    let note=profile[0]["id"].as_str().unwrap().to_string();
+    let before=call(&mut store,"chat_context",json!({"project_id":book,"query":"critic"}));
+    assert_eq!(before["writer_profile"],json!([]));
+    assert!(store.request("edit_writer_profile_note",json!({"id":note,
+        "dimension":"Not a dimension","claim":"bad"})).is_err());
+    call(&mut store,"edit_writer_profile_note",json!({"id":note,
+        "dimension":"Reasoning style",
+        "claim":"The writer values a faithful explanation followed by a genuinely independent critique."}));
+    let corrected=call(&mut store,"writer_profile",json!({}));
+    assert_eq!(corrected[0]["state"],"Confirmed");
+    assert_eq!(corrected[0]["evidence_quote"],"a serious critic, not someone who only agrees");
+    assert_eq!(corrected[0]["source_turn_id"],tid);
+    assert_eq!(corrected[0]["claim"],"The writer values a faithful explanation followed by a genuinely independent critique.");
+    let history=call(&mut store,"writer_profile_history",json!({"id":note}));
+    assert_eq!(history.as_array().unwrap().len(),1);
+    assert_eq!(history[0]["previous_state"],"Candidate");
+    assert_eq!(history[0]["previous_claim"],"The writer expects total agreement.");
+    let context=call(&mut store,"chat_context",json!({"project_id":book,"query":"critic"}));
+    assert_eq!(context["writer_profile"][0]["claim"], corrected[0]["claim"]);
+    call(&mut store,"review_writer_profile_note",json!({"id":note,"state":"Rejected"}));
+    assert_eq!(call(&mut store,"chat_context",json!({"project_id":book,"query":"critic"}))
+        ["writer_profile"],json!([]));
+    drop(store);
+    let mut reopened=Store::open(tmp.path()).unwrap();
+    let history=call(&mut reopened,"writer_profile_history",json!({"id":note}));
+    assert_eq!(history.as_array().unwrap().len(),2);
+    assert_eq!(history[0]["previous_state"],"Confirmed");
+    assert_eq!(call(&mut reopened,"writer_profile",json!({}))[0]["evidence_quote"],
+        "a serious critic, not someone who only agrees");
+}
+
+#[test]
+fn relevant_passages_retrieved_across_old_and_new_sources_without_project_leaks() {
+    let tmp=tempfile::tempdir().unwrap();
+    let mut store=Store::open(tmp.path().join("data")).unwrap();
+    let book=project(&mut store,"First book");
+    let other=project(&mut store,"Other book");
+    let own_path=tmp.path().join("own.md");
+    let study_path=tmp.path().join("study.md");
+    fs::write(&own_path,"Responsibility includes genuine freedom and contextual assessment.").unwrap();
+    fs::write(&study_path,"A study disputes the same responsibility and freedom framework.").unwrap();
+    let own=import(&mut store,&book,&own_path);
+    let study=import(&mut store,&book,&study_path);
+    call(&mut store,"source_origin",json!({"project_id":book,"id":own["id"],"origin":"Author"}));
+    let original=call(&mut store,"chat_context",json!({"project_id":book,"query":"responsibility"}));
+    assert!(original["passages"].as_array().unwrap().iter().any(|p|p["source_origin"]=="Author"));
+    assert!(original["passages"].as_array().unwrap().iter().any(|p|p["source_origin"]=="External"));
+    // Insert newer unrelated passages so the author source would fall beyond
+    // the old 1500-passage recency window. The FTS retrieval must still find it.
+    let filler=study["id"].as_str().unwrap();
+    let tx=store.conn.transaction().unwrap();
+    for index in 0..1520 {
+        tx.execute("INSERT INTO passages(source_id,project_id,location,text) VALUES(?,?,?,?)",
+            rusqlite::params![filler,book,format!("noise {index}"),"A passage about an unrelated gardening topic."]).unwrap();
+    }
+    tx.commit().unwrap();
+    let context=call(&mut store,"chat_context",json!({"project_id":book,"query":"responsibility"}));
+    assert!(context["passages"].as_array().unwrap().iter().any(|p|p["source_origin"]=="Author"));
+    assert!(context["passages"].as_array().unwrap().iter().any(|p|p["source_origin"]=="External"));
+    let unrelated=call(&mut store,"chat_context",json!({"project_id":other,"query":"responsibility"}));
+    assert_eq!(unrelated["passages"],json!([]));
 }
