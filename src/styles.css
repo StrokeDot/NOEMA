@@ -1396,3 +1396,14 @@ padding:10px;background:var(--paper);min-width:0;}
 
 .library-back{display:block;width:calc(100% - 24px);margin:13px 12px 6px;text-align:left;border-radius:9px;background:var(--accent-soft);font-weight:600;color:var(--accent);padding:11px 13px}
 .library-back:hover{border-color:var(--accent)}
+
+
+/* Ollama model-download diagnostics remain readable after a failed pull. */
+.dialogue-download-error{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--danger);background:var(--paper);
+  border:1px solid var(--line);border-radius:9px;padding:12px;font:12px/1.55 Consolas,"Segoe UI",monospace}
+.dialogue-model-size{display:block;color:var(--muted);font-size:10px;font-weight:400;margin-top:5px}
+.dialogue-model-help{margin:10px 0 16px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.dialogue-model-help summary{font-size:12px;font-weight:600;cursor:pointer}
+.dialogue-model-help p{font-size:11px;color:var(--muted);line-height:1.6}
+.dialogue-model-help code{user-select:text;overflow-wrap:anywhere}
+.dialogue-pull-status p{font-size:11px;line-height:1.5;margin:6px 0}
