@@ -263,7 +263,7 @@ pub async fn update_install(
     // Launch installation after NOEMA exits so NSIS can replace the executable.
     // Never accept an arbitrary command or download URL from frontend input.
     let contents=format!(
-        "$ErrorActionPreference='Stop'\\nStart-Sleep -Seconds 3\\n$installer=Start-Process -FilePath {} -ArgumentList '/S' -Wait -PassThru\\nif ($installer.ExitCode -ne 0) {{ throw 'NOEMA update installer failed' }}\\nStart-Sleep -Seconds 2\\nif (Test-Path -LiteralPath {}) {{ Start-Process -FilePath {} }}\\n",
+        "$ErrorActionPreference='Stop'\nStart-Sleep -Seconds 3\n$installer=Start-Process -FilePath {} -ArgumentList '/S' -Wait -PassThru\nif ($installer.ExitCode -ne 0) {{ throw 'NOEMA update installer failed' }}\nStart-Sleep -Seconds 2\nif (Test-Path -LiteralPath {}) {{ Start-Process -FilePath {} }}\n",
         ps_literal(&exe),ps_literal(&app_exe),ps_literal(&app_exe)
     );
     fs::write(&ps,contents).map_err(|e|format!("Cannot prepare update installer: {e}"))?;
