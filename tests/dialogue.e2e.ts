@@ -10,7 +10,7 @@ test("book dialogue keeps separate conversation purposes and preserves them afte
   await expect(project).toBeVisible();
   await project.getByLabel("Book title",{exact:true}).fill("Dialogue-first book");
   await project.getByLabel("Author",{exact:true}).fill("Author");
-  await project.getByRole("button",{name:"Create writing project"}).click();
+  await project.getByRole("button",{name:"Create book →"}).click();
   await expect(project).toBeHidden();
   await page.getByRole("button",{name:"Book dialogue",exact:true}).click();
   await expect(page.getByText("What shall we think through?")).toBeVisible();
