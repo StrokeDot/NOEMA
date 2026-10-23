@@ -1210,3 +1210,6 @@ main {
 .source-category p{min-height:94px;line-height:1.55;font-size:13px;}
 .source-category button{width:100%;}
 @media(max-width:850px){.source-dual{grid-template-columns:1fr;}.source-category p{min-height:auto;}}
+
+.critical-layer{border-left:3px solid #a87432;background:color-mix(in srgb,var(--panel) 70%,transparent);}
+.critical-layer small{display:block;margin-top:10px;color:var(--muted);font-size:11px;}

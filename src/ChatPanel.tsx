@@ -3,7 +3,7 @@ import {invoke,isTauri} from "@tauri-apps/api/core";
 import {request,errorText} from "./api";
 import type {Document,Project} from "./types";
 type Turn={id:string;original_text:string;interpreted_text:string;interpretation_author_corrected:number;
-  assistant_response:string;provider:string;model:string;state:"pending"|"complete";created_at:number};
+  assistant_response:string;critical_review:string;critique_explored:number;provider:string;model:string;state:"pending"|"complete";created_at:number};
 type Legacy={id:string;role:"user"|"assistant";content:string;provider:string;created_at:number};
 type Status={openai_key_saved:boolean};
 type RecEvent={results:ArrayLike<{[n:number]:{transcript:string}}>};
@@ -115,6 +115,17 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
       setNotice("Interpretation corrected by the writer. Original voice remains unchanged.");
     }catch(e){onError(errorText(e))}
   }
+  async function markCritique(turn:Turn){
+    try{await request("mark_critique_explored",{project_id:project.id,turn_id:turn.id,explored:true});
+      await refresh();setNotice("You marked this critique as reviewed. This does not mean you agreed with it.")}
+    catch(e){onError(errorText(e))}
+  }
+  function examineCritique(turn:Turn){
+    setSkill("argument-review");
+    setInput("Explore the following critique of my argument. Steelman it, identify which premises I accept or reject, distinguish genuine new issues from repeated objections, and help me respond fairly:\n\n"+turn.critical_review);
+    composer.current?.focus();
+    setNotice("The critique is loaded into the composer for discussion. Sending it is your choice.");
+  }
   async function createChapter(text:string){
     const title=window.prompt("New book chapter title");if(!title?.trim())return;
     if(!window.confirm("Create a NEW chapter from this passage? No existing chapter will be overwritten."))return;
@@ -132,7 +143,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
       <div><div className="eyebrow">AUTHOR'S ORIGINAL VOICE</div><h2>Conversation transcript</h2></div>
       <button aria-label="AI provider settings" onClick={()=>setSettings(v=>!v)}>⚙</button>
     </div>
-    <p className="ai-chat-intro">Every exchange records: original writer input → interpreted meaning → AI response. Approve book-ready material separately.</p>
+    <p className="ai-chat-intro">Every exchange keeps your original words, the AI interpretation, a framework-aware reply, and a separate critical review. You decide what enters your book.</p>
     {settings&&<section className="ai-provider-settings">
       <h3>Reasoning model</h3>
       <p>OpenAI uses a separately billed API key. Ollama runs open-weight models locally. NOEMA does not inherit your ChatGPT Plus account.</p>
@@ -193,9 +204,22 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
             <div className="ai-message-actions">
               <button onClick={()=>void saveToDraft(turn,"AI proposal",turn.assistant_response)}>Save to draft</button>
               <button onClick={()=>onGem(turn.assistant_response)}>Writing Gem</button>
-              <button disabled={!!working} onClick={()=>void createChapter(turn.assistant_response)}>New chapter</button>
-              {activeChapter&&<button disabled={!!working} onClick={()=>void replaceChapter(turn.assistant_response)}>Replace draft…</button>}
+              <button disabled={!!working||(!turn.critique_explored&&!!turn.critical_review)} title={!turn.critique_explored?"Review or acknowledge the critical response before committing this AI passage to a chapter":undefined}
+                onClick={()=>void createChapter(turn.assistant_response)}>New chapter</button>
+              {activeChapter&&<button disabled={!!working||(!turn.critique_explored&&!!turn.critical_review)}
+                onClick={()=>void replaceChapter(turn.assistant_response)}>Replace draft…</button>}
             </div>
+          </div>
+          <div className="triplet-layer critical-layer">
+            <div className="ai-message-author">4 · Independent critique and counterarguments</div>
+            <div className="ai-message-text">{turn.critical_review||"No separate critique was returned."}</div>
+            <div className="ai-message-actions">
+              <button disabled={!turn.critical_review} onClick={()=>examineCritique(turn)}>Explore this critique</button>
+              <button disabled={!turn.critical_review||!!turn.critique_explored} onClick={()=>void markCritique(turn)}>
+                {turn.critique_explored?"Critique reviewed":"Mark critique considered"}
+              </button>
+            </div>
+            <small>You control the conclusion. Considering a counterargument never requires agreeing with it.</small>
           </div>
         </>}
       </article>)}
