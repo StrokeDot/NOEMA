@@ -6,6 +6,7 @@ import DOMPurify from "dompurify";
 import { request, errorText } from "./api";
 import type { Project, Chapter, Document, Source } from "./types";
 import Manuscript from "./Editor";
+import LibraryHome from "./LibraryHome";
 import ScriptStudio from "./ScriptStudio";
 import Updates from "./Updates";
 import ChatPanel from "./ChatPanel";
@@ -40,16 +41,16 @@ const symbols = ["▦", "◉", "✎", "▤", "☷", "◇", "◈", "▣", "❖", 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [channels, setChannels] = useState<ChannelProfile[]>([]);
-  const [newScriptChannel, setNewScriptChannel] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [doc, setDoc] = useState<Document | null>(null);
   const [view, setView] = useState<View>("Write");
   const [boot, setBoot] = useState(true);
+  const [homeUpdates,setHomeUpdates] = useState(false);
+  const [chaptersByBook,setChaptersByBook] = useState<Record<string,number>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [newProject, setNewProject] = useState(false);
-  const [newProjectType, setNewProjectType] = useState<Project["project_type"] | null>(null);
   const [nav, setNav] = useState(false);
   const [research, setResearch] = useState(
     () => window.matchMedia("(min-width: 1051px)").matches,
@@ -65,7 +66,6 @@ export default function App() {
   const flushRef = useRef<() => Promise<void>>(async () => {});
   const lock = useRef(false);
   const report = useCallback((s: string) => setError(s), []);
-  const reloadChannels = useCallback(async () => { const data=await request<ChannelProfile[]>("channels");setChannels(data);return data; }, []);
   const registerFlush = useCallback((fn: () => Promise<void>) => {
     flushRef.current = fn;
   }, []);
@@ -83,27 +83,40 @@ export default function App() {
     setCaptureGem(null);
     localStorage.setItem("noema-last-project", p.id);
   }, []);
+  const refreshLibrary = useCallback(async()=>{
+    const ps=await request<Project[]>("projects");
+    setProjects(ps);
+    const books=ps.filter(p=>p.project_type==="Book");
+    const counts=await Promise.all(books.map(async p=>{
+      try{return [p.id,(await request<Chapter[]>("chapters",{project_id:p.id})).length] as const}
+      catch{return [p.id,undefined] as const}
+    }));
+    const next:Record<string,number>={};
+    for(const [id,count] of counts)if(count!==undefined)next[id]=count;
+    setChaptersByBook(next);
+    return ps;
+  },[]);
   useEffect(() => {
     let live = true;
-    request<ChannelProfile[]>("channels").then(setChannels).catch(e=>report(errorText(e)));
-    request<Project[]>("projects")
-      .then(async (ps) => {
-        if (!live) return;
-        setProjects(ps);
-        const initial =
-          ps.find((p) => p.id === localStorage.getItem("noema-last-project")) ??
-          ps[0];
-        if (initial) await activate(initial);
-        else setNewProject(true);
-      })
-      .catch((e) => report(errorText(e)))
-      .finally(() => {
-        if (live) setBoot(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [activate, report]);
+    // Start in the library EVERY time, even if the last book is remembered.
+    // The remembered id is only used to highlight/sort that book.
+    void refreshLibrary().catch(e=>{if(live)report(errorText(e))})
+      .finally(()=>{if(live)setBoot(false)});
+    return ()=>{live=false};
+  },[refreshLibrary,report]);
+  const goLibrary=()=>void action(async()=>{
+    flushRef.current=async()=>{};
+    setProject(null);
+    setChapters([]);
+    setDoc(null);
+    setView("Write");
+    setSource(null);
+    setCaptureGem(null);
+    setNav(false);
+    setFocus(false);
+    setHomeUpdates(false);
+    await refreshLibrary();
+  });
   useEffect(() => {
     const wide = window.matchMedia("(min-width: 1051px)");
     const collapse = () => { if (!wide.matches) setResearch(false); };
@@ -300,12 +313,6 @@ export default function App() {
     Channels: "Channel profiles", Gems: isScript ? "Script gems" : "Writing gems",
     Preview: isScript ? "Draft preview" : "Book preview", "Writer Profile": "Writer profile", "Conversation Draft": "Conversation draft", Updates: "Updates", Settings: "Settings",
   }[v]);
-  const switchWorkspace = (type: Project["project_type"]) => void action(async () => {
-    const existing = projects.find(p => p.project_type === type);
-    if (existing) await activate(existing);
-    else { setNewProjectType(type); setNewScriptChannel(null); setNewProject(true); }
-    setNav(false);
-  });
   if (boot)
     return (
       <div className="welcome">
@@ -313,6 +320,33 @@ export default function App() {
         <p>Opening your writing studio…</p>
       </div>
     );
+  if (!project) return <>
+    {homeUpdates ? <div className="book-library-updates">
+      <div className="row"><h1>NOEMA updates</h1>
+        <button onClick={()=>setHomeUpdates(false)}>← Back to library</button>
+      </div>
+      <Updates beforeInstall={async()=>await flushRef.current()} onError={report}/>
+    </div> :
+      <LibraryHome projects={projects} chaptersByBook={chaptersByBook}
+        onOpen={p=>void action(async()=>{await activate(p)})}
+        onCreate={()=>setNewProject(true)}
+        onUpdates={()=>setHomeUpdates(true)}
+        onTheme={()=>setTheme(v=>v==="light"?"dark":"light")}
+        theme={theme} busy={busy} availableUpdate={availableUpdate}
+        archivedScripts={projects.filter(p=>p.project_type==="Video Script").length}/>}
+    {error&&<div className="error-banner" role="alert"><span>{error}</span>
+      <button onClick={()=>setError("")}>Dismiss</button></div>}
+    {newProject&&<ProjectForm canCancel onCancel={()=>setNewProject(false)}
+      onCreate={async fields=>{
+        const created=await request<{id:string}>("create_project",fields);
+        const ps=await refreshLibrary();
+        const book=ps.find(p=>p.id===created.id);
+        if(!book)throw new Error("New book could not be found");
+        await activate(book);
+        setView("Research");
+        setNewProject(false);
+      }}/>}
+  </>;
   return (
     <div
       className={`studio ${focus ? "focus" : ""} ${nav ? "nav-open" : ""}`}
@@ -320,13 +354,10 @@ export default function App() {
     >
       {!focus && (
         <aside className="navigator">
-          <div className="brand">
-            NOEMA<span>{isScript ? "YOUTUBE SCRIPT STUDIO" : "BOOK WRITING STUDIO"}</span>
-          </div>
-          <div className="workspace-switch" aria-label="Switch workspace">
-            <button aria-pressed={!isScript} onClick={() => switchWorkspace("Book")} disabled={busy}>Books</button>
-            <button aria-pressed={!!isScript} onClick={() => switchWorkspace("Video Script")} disabled={busy}>YouTube channels</button>
-          </div>
+          <div className="brand">NOEMA<span>BOOK WRITING STUDIO</span></div>
+          <button className="library-back" disabled={busy} onClick={goLibrary}>
+            ← All books
+          </button>
           <div className="project-switch">
             <div className="eyebrow">CURRENT PROJECT</div>
             <select
@@ -338,21 +369,12 @@ export default function App() {
                 if (p) void action(() => activate(p));
               }}
             >
-              {!project && <option value="">Choose your writing project</option>}
-              {!isScript && <optgroup label="Books">{projects.filter(p=>p.project_type==="Book").map(p=>
-                <option key={p.id} value={p.id}>{p.title}</option>)}</optgroup>}
-              {isScript && channels.map(c=><optgroup key={c.id} label={c.name}>
-                {projects.filter(p=>p.project_type==="Video Script" && p.channel_id===c.id)
-                  .map(p=><option key={p.id} value={p.id}>{p.title}</option>)}
-              </optgroup>)}
-              {isScript && <optgroup label="Unassigned video scripts">
-                {projects.filter(p=>p.project_type==="Video Script" && !p.channel_id)
-                  .map(p=><option key={p.id} value={p.id}>{p.title}</option>)}
-              </optgroup>}
+              <optgroup label="Books">{projects.filter(p=>p.project_type==="Book").map(p=>
+                <option key={p.id} value={p.id}>{p.title}</option>)}</optgroup>
             </select>
             <button
               className="new-project"
-              onClick={() => void action(async () => {setNewScriptChannel(null);setNewProjectType(null);setNewProject(true);})}
+              onClick={() => setNewProject(true)}
             >
               + New writing project
             </button>
@@ -477,7 +499,7 @@ export default function App() {
             ☰
           </button>
           <div className="breadcrumb">
-            {project?.title ?? "Your writing studio"}
+            {project.title}
             <span> / {viewLabel(view)}</span>
           </div>
           <div className="top-actions">
@@ -707,166 +729,63 @@ export default function App() {
         />
       )}
       {newProject && (
-        <ProjectForm
-          channels={channels}
-          initialChannelId={newScriptChannel}
-          initialType={newProjectType}
-          onCreateChannel={async name=>{
-            const saved=await request<{id:string}>("save_channel",{name,confirmed:false});
-            await reloadChannels();
-            return saved.id;
-          }}
-          canCancel={!!project}
-          onCancel={() => setNewProject(false)}
-          onCreate={async (fields) => {
-            const added = await request<{ id: string }>(
-              "create_project",
-              fields,
-            );
-            const ps = await request<Project[]>("projects");
-            setProjects(ps);
-            await activate(ps.find((p) => p.id === added.id)!);
-            if(fields.project_type==="Book")setView("Research");
+        <ProjectForm canCancel onCancel={()=>setNewProject(false)}
+          onCreate={async fields=>{
+            const added=await request<{id:string}>("create_project",fields);
+            const ps=await refreshLibrary();
+            const book=ps.find(p=>p.id===added.id);
+            if(!book)throw new Error("New book could not be found");
+            await activate(book);
+            setView("Research");
             setNewProject(false);
-            setNewScriptChannel(null);
-          }}
-        />
+          }}/>
       )}
     </div>
   );
 }
-function ProjectForm({
-  canCancel, onCancel, onCreate, channels, initialChannelId, initialType, onCreateChannel,
-}: {
-  canCancel: boolean;
-  onCancel: () => void;
-  onCreate: (fields: Record<string, string>) => Promise<void>;
-  channels: ChannelProfile[];
-  initialChannelId: string | null;
-  initialType: Project["project_type"] | null;
-  onCreateChannel: (name:string)=>Promise<string>;
-}) {
-  const [title, setTitle] = useState("");
-  const [author, setAuthor] = useState("");
-  const [projectType, setProjectType] = useState<"Book" | "Video Script" | null>(initialChannelId ? "Video Script" : initialType);
-  const [channelId,setChannelId] = useState(initialChannelId??"");
-  const [newChannelName,setNewChannelName] = useState("");
-  const [description, setDescription] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  return (
-    <div className="modal-backdrop onboarding">
-      <form
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="New writing project"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (!projectType) return;
-          setBusy(true);
-          try {
-            await onCreate({
-              title: title.trim(),
-              author: author.trim(),
-              project_type: projectType,
-              channel_id: projectType==="Video Script" ? channelId : "",
-              description,
-            });
-          } catch (err) {
-            setError(errorText(err));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <div className="brand">NOEMA</div>
-        <div className="eyebrow">WHERE THOUGHT BECOMES LEGACY</div>
-        {!projectType ? <>
-          <h1>What would you like to create?</h1>
-          <p>Choose the workspace for this project.</p>
-          <div className="project-type-cards">
-            <button type="button" onClick={() => setProjectType("Book")}>
-              <strong>Book project</strong><span>Chapters, manuscript, book research, memory, and preview.</span>
-            </button>
-            <button type="button" onClick={() => setProjectType("Video Script")}>
-              <strong>YouTube channel script</strong><span>Channel identity, scenes, narration, visuals, citations, and production notes.</span>
-            </button>
-          </div>
-          {canCancel && <button type="button" onClick={onCancel}>Cancel</button>}
-        </> : <>
-        <button type="button" className="text-button" disabled={busy} onClick={() => setProjectType(null)}>← Change project type</button>
-        <h1>{projectType === "Book" ? "Create a book project" : "Create a channel script"}</h1>
-        <p>{projectType === "Book" ? "A dedicated home for your manuscript and book research." : "Write and plan a video for one of your YouTube channels."}</p>
-        {projectType === "Video Script" && <div className="channel-create-inline">
-          <label>Channel
-            <select aria-label="Video script channel" required value={channelId}
-              onChange={e=>setChannelId(e.target.value)}>
-              <option value="">Choose a channel profile</option>
-              {channels.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </label>
-          <div className="channel-quick-add">
-            <input aria-label="New channel name" placeholder="Or create a new channel" value={newChannelName}
-              onChange={e=>setNewChannelName(e.target.value)} />
-            <button type="button" disabled={busy||!newChannelName.trim()} onClick={async()=>{
-              setBusy(true);
-              try{const id=await onCreateChannel(newChannelName.trim());setChannelId(id);setNewChannelName("");}
-              catch(e){setError(errorText(e))}finally{setBusy(false)}
-            }}>+ Create channel</button>
-          </div>
-          <small>You can refine the channel's profile in Channel profiles after creating the script.</small>
-        </div>}
-        <label>
-          {projectType === "Book" ? "Book title" : "Video script title"}
-          <input
-            autoFocus
-            required
-            maxLength={500}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={projectType === "Book" ? "The book only you can write" : "The story only you can tell"}
-          />
-        </label>
-        <label>
-          Author
-          <input
-            required
-            maxLength={500}
-            value={author}
-            onChange={(e) => setAuthor(e.target.value)}
-            placeholder="Your name"
-          />
-        </label>
-        <label>
-          Description <span className="muted">(optional)</span>
-          <textarea
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder={projectType === "Book" ? "What is this book here to explore?" : "What will this video explore?"}
-          />
-        </label>
-        {error && <p role="alert">{error}</p>}
-        <div className="row">
-          {canCancel ? (
-            <button type="button" disabled={busy} onClick={onCancel}>
-              Cancel
-            </button>
-          ) : (
-            <small>Stored on this computer. No account needed.</small>
-          )}
-          <button
-            className="primary"
-            disabled={busy || !title.trim() || !author.trim() || (projectType==="Video Script" && !channelId)}
-          >
-            {busy ? "Creating…" : "Create writing project →"}
-          </button>
-        </div>
-        </>}
-      </form>
-    </div>
-  );
+function ProjectForm({canCancel,onCancel,onCreate}:{
+  canCancel:boolean;
+  onCancel:()=>void;
+  onCreate:(fields:Record<string,string>)=>Promise<void>;
+}){
+  const [title,setTitle]=useState("");
+  const [author,setAuthor]=useState("");
+  const [description,setDescription]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  return <div className="modal-backdrop onboarding">
+    <form className="modal" role="dialog" aria-modal="true" aria-label="New writing project"
+      onSubmit={async e=>{
+        e.preventDefault();
+        setBusy(true);setError("");
+        try{await onCreate({title:title.trim(),author:author.trim(),description,project_type:"Book",channel_id:""})}
+        catch(e){setError(errorText(e))}finally{setBusy(false)}
+      }}>
+      <div className="brand">NOEMA</div>
+      <div className="eyebrow">A NEW PLACE FOR YOUR THOUGHTS</div>
+      <h1>Create a book project</h1>
+      <p>Give your book a home. Its chapters, research, and conversations will stay together here.</p>
+      <label>Book title
+        <input autoFocus required maxLength={500} value={title}
+          onChange={e=>setTitle(e.target.value)} placeholder="The book only you can write"/>
+      </label>
+      <label>Author
+        <input required maxLength={500} value={author}
+          onChange={e=>setAuthor(e.target.value)} placeholder="Your name"/>
+      </label>
+      <label>Description <span className="muted">(optional)</span>
+        <textarea rows={3} value={description} onChange={e=>setDescription(e.target.value)}
+          placeholder="What is this book here to explore?"/>
+      </label>
+      {error&&<p role="alert">{error}</p>}
+      <div className="row">
+        {canCancel&&<button type="button" disabled={busy} onClick={onCancel}>Cancel</button>}
+        <button className="primary" disabled={busy||!title.trim()||!author.trim()}>
+          {busy?"Creating…":"Create book →"}
+        </button>
+      </div>
+    </form>
+  </div>;
 }
 function Preview({
   project,
