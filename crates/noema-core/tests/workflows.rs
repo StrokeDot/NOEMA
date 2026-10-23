@@ -695,6 +695,7 @@ fn v9_conversation_preserves_original_and_requires_writer_confirmation() {
         "original_evidence":original,
         "interpreted_text":"Responsibility matters even while the idea is forming.",
         "assistant_response":"We should distinguish agency from blame.",
+        "critical_review":"A critic might challenge whether the author has established what genuine choice requires.",
         "provider":"ollama","model":"gpt-oss:20b",
         "profile_suggestions":[{"dimension":"Reasoning style",
             "claim":"Prefers exploratory spoken reasoning.",
