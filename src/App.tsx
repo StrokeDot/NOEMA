@@ -74,7 +74,7 @@ export default function App() {
     setProject(p);
     setChapters(cs);
     setDoc(first);
-    setView(p.project_type === "Video Script" ? "Script Studio" : "Write");
+    setView("Write");
     setSource(null);
     setCaptureGem(null);
     localStorage.setItem("noema-last-project", p.id);
