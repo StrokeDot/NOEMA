@@ -4,7 +4,7 @@ use crate::Database;
 use keyring::Entry;
 use reqwest::Client;
 use serde_json::{json,Value};
-use tauri::State;
+use tauri::{AppHandle,Emitter,State};
 use std::time::Duration;
 
 const SECRET_SERVICE:&str="NOEMA-OpenAI-API";
@@ -43,7 +43,7 @@ fn chat_system(ctx:&Value)->String{
 Use profile dimension only from: Writing voice; Reasoning style; Moral framework; Values and beliefs; Working preferences; Other.
 Never claim to know a diagnosis, hidden personality trait, moral status, or psychological state from casual language. Prefer no profile suggestion to speculation. An AI interpretation is an hypothesis until the writer confirms it.
 IMPORTANT: The writer's raw input is immutable. The interpretation must not be silently substituted for it.
-Confirmed profile notes are author-approved. Candidate profile observations are not. Never mistake an imported book author's beliefs for the writer's.
+The AUTHOR is the subject directing this collaboration. You are an assisting object/tool, never the book's owner. The common purpose is the author's chosen BOOK; use the dialogue's goal and title to keep discussion relevant. Debate ideas with the author, record meaningful conceptual progress and propose paths to manuscript output, never silently commit passages.\nConfirmed profile notes are author-approved. Candidate profile observations are not. Never mistake an imported book author's beliefs for the writer's.
 Distinguish observation from interpretation, fact from opinion, source claims from author positions, and questions from assertions.
 Never silently revise established author positions; respond with a concrete new objection instead of recycling rejected arguments.
 External documents and novels can inform story architecture or writing craft but must never be copied closely. For fiction, the critical review should examine narrative logic, originality and character motivation rather than invent factual objections.
@@ -102,6 +102,75 @@ fn validated_model(raw:&str)->Result<&str,String>{
     }
     Ok(raw)
 }
+// Ask the running Ollama service; it knows its configured model location even
+// when OLLAMA_MODELS points to another disk. Do not scan private user drives.
+async fn installed_ollama_models(client:&Client)->Result<Vec<Value>,String>{
+    let response=client.get("http://127.0.0.1:11434/api/tags").send().await
+        .map_err(|_|"Ollama isn't running. Start Ollama to find local models.".to_string())?;
+    if !response.status().is_success(){return Err(format!("Ollama model query failed ({})",response.status()));}
+    let body:Value=response.json().await.map_err(|_|"Ollama returned unreadable model information".to_string())?;
+    Ok(body["models"].as_array().cloned().unwrap_or_default())
+}
+fn same_ollama_model(a:&str,b:&str)->bool{
+    let normalize=|name:&str| {
+        let name=name.to_ascii_lowercase();
+        if name.ends_with(":latest"){name.trim_end_matches(":latest").to_string()}else{name}
+    };
+    normalize(a)==normalize(b)
+}
+#[tauri::command]
+pub async fn ai_local_models()->Result<Value,String>{
+    let client=Client::builder().timeout(Duration::from_secs(12)).build().map_err(|e|e.to_string())?;
+    let models=installed_ollama_models(&client).await?;
+    Ok(json!({"models":models,"service":"Ollama","storage":"Ollama's configured model directory"}))
+}
+#[tauri::command]
+pub async fn ai_pull_model(app:AppHandle,model:String)->Result<Value,String>{
+    let model=validated_model(&model)?.to_string();
+    let client=Client::builder().timeout(Duration::from_secs(60*60)).build().map_err(|e|e.to_string())?;
+    let installed=installed_ollama_models(&client).await?;
+    if installed.iter().any(|item|{
+        item["name"].as_str().or_else(||item["model"].as_str())
+            .is_some_and(|name|same_ollama_model(name,&model))
+    }){
+        return Ok(json!({"model":model,"already_installed":true}));
+    }
+    let mut response=client.post("http://127.0.0.1:11434/api/pull")
+        .json(&json!({"name":model,"stream":true})).send().await
+        .map_err(|e|format!("Ollama download could not start: {e}"))?;
+    if !response.status().is_success(){
+        let error=response.text().await.unwrap_or_default();
+        return Err(format!("Ollama refused to download {model}: {}",error.chars().take(350).collect::<String>()));
+    }
+    let mut buffer=String::new();
+    let mut finished=false;
+    while let Some(chunk)=response.chunk().await.map_err(|e|format!("Model download interrupted: {e}"))? {
+        let text=std::str::from_utf8(&chunk).map_err(|_|"Unexpected Ollama progress data".to_string())?;
+        buffer.push_str(text);
+        if buffer.len()>100_000 {return Err("Ollama progress message exceeds the safety limit".into());}
+        while let Some(end)=buffer.find('\n'){
+            let line=buffer[..end].trim().to_string();
+            buffer.drain(..=end);
+            if line.is_empty(){continue;}
+            let event:Value=serde_json::from_str(&line).map_err(|_|"Invalid Ollama progress event".to_string())?;
+            if let Some(err)=event["error"].as_str(){return Err(format!("Ollama download failed: {err}"));}
+            let status=event["status"].as_str().unwrap_or("Downloading");
+            if status=="success"{finished=true;}
+            let _=app.emit("noema-model-download-progress",json!({
+                "model":model,"status":status,
+                "completed":event["completed"].as_u64().unwrap_or(0),
+                "total":event["total"].as_u64().unwrap_or(0)
+            }));
+        }
+    }
+    if !finished {return Err("Ollama ended the transfer without confirming a successful installation".into());}
+    let installed=installed_ollama_models(&client).await?;
+    if !installed.iter().any(|item|{
+        item["name"].as_str().or_else(||item["model"].as_str())
+            .is_some_and(|name|same_ollama_model(name,&model))
+    }) {return Err("Ollama reported success, but the model is not in its installed inventory".into());}
+    Ok(json!({"model":model,"already_installed":false,"installed":true}))
+}
 #[tauri::command]
 pub async fn ai_reply(
     db:State<'_,Database>,
@@ -109,7 +178,8 @@ pub async fn ai_reply(
     provider:String,
     model:String,
     message:String,
-    skill_id:String
+    skill_id:String,
+    dialogue_id:Option<String>
 )->Result<Value,String>{
     if message.trim().is_empty() || message.len()>100_000 {return Err("Enter a shorter message".into());}
     let model=validated_model(&model)?;
@@ -117,9 +187,9 @@ pub async fn ai_reply(
     // Persist original text immediately, before any model or network error.
     let (turn_id,ctx)={
         let mut store=db.lock().map_err(|_|"Cannot access project database".to_string())?;
-        let turn=store.request("begin_writing_turn",json!({"project_id":project_id,"original_text":message}))
+        let turn=store.request("begin_writing_turn",json!({"project_id":project_id,"original_text":message,"dialogue_id":dialogue_id}))
             .map_err(|e|e.to_string())?;
-        let ctx=store.request("chat_context",json!({"project_id":project_id,"query":message}))
+        let ctx=store.request("chat_context",json!({"project_id":project_id,"query":message,"dialogue_id":dialogue_id}))
             .map_err(|e|e.to_string())?;
         (turn["id"].as_str().ok_or("Unable to save original writer input")?.to_string(),ctx)
     };
