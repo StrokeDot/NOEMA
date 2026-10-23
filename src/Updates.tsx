@@ -19,10 +19,8 @@ export default function Updates({
     if(!isTauri())return;
     const current=await invoke<Status>("update_status");
     setState(current);
-    if(current.authorized){
-      try{setNewVersion(await invoke<UpdateInfo>("update_check"))}
-      catch(e){setMessage(errorText(e))}
-    }
+    try{setNewVersion(await invoke<UpdateInfo>("update_check"))}
+    catch(e){setMessage("Automatic check: "+errorText(e)+". If this repository is private, connect GitHub access below.")}
   },[]);
   useEffect(()=>{void load().catch(e=>onError(errorText(e)))},[load,onError]);
   async function saveToken(){
@@ -64,13 +62,15 @@ export default function Updates({
   }
   if(!isTauri())return <section><h2>NOEMA updates</h2><p>Private Windows updates are only available inside the installed desktop app.</p></section>;
   return <section className="noema-updater">
-    <div className="eyebrow">PRIVATE GITHUB UPDATE SERVICE</div>
+    <div className="eyebrow">GITHUB IN-APP UPDATE SERVICE</div>
     <h2>NOEMA updates</h2>
     <p>Installed version: <strong>{state?.installed??"Checking…"}</strong></p>
-    <p>NOEMA can check verified successful Windows builds in your private GitHub repository,
-      download an update, verify its GitHub SHA-256 digest, back up your writing, and start its installer after closing.</p>
-    {!state?.authorized ? <div className="updater-auth">
-      <h3>Connect private GitHub downloads</h3>
+    <p>Check GitHub for a newer Windows build, download it inside NOEMA, verify the SHA-256 artifact digest,
+      create a safety backup, then update after closing the editor. No browser download is needed once this updater is installed.</p>
+    <div className="row"><button className="primary" onClick={()=>void check()} disabled={busy}>
+      {busy?"Working…":"Check GitHub for updates"}</button></div>
+    {!state?.authorized ? <details className="updater-auth"><summary>Connect GitHub token if updates are private or access fails</summary>
+      <h3>Optional private GitHub access</h3>
       <p>To keep NOEMA private, authorize downloads with a <strong>fine-grained GitHub access token</strong> for
         <code>StrokeDot/NOEMA</code>. Grant only <strong>Actions: Read</strong> for this repository.
         Set an expiration and never share the token in chat or commit it to GitHub.</p>
@@ -86,13 +86,14 @@ export default function Updates({
       </button>
       <p className="muted">The token is stored in Windows Credential Manager, not your manuscript database or application package.
         You may disconnect at any time.</p>
-    </div> : <div className="updater-connected">
-      <p><span className="local-dot"/> Connected to your private GitHub Windows builds.</p>
+    </details> : <div className="updater-connected">
+      <p><span className="local-dot"/> GitHub authorization is saved securely.</p>
       <div className="row">
         <button onClick={()=>void check()} disabled={busy}>{busy?"Checking…":"Check for updates"}</button>
         <button onClick={()=>void disconnect()} disabled={busy}>Disconnect GitHub</button>
       </div>
-      {newVersion?.available ? <div className="updater-available">
+    </div>}
+    {newVersion?.available ? <div className="updater-available">
         <h3>NOEMA {newVersion.version} is available</h3>
         <p>A successful main-branch Windows installer was found. Your writing will be backed up before installation.</p>
         <button className="primary" disabled={busy} onClick={()=>void install()}>
@@ -100,10 +101,9 @@ export default function Updates({
         </button>
         {newVersion.url && <p className="micro">Build: {newVersion.url}</p>}
       </div> : newVersion && <p className="notice">You are using the newest successful Windows version available to this updater.</p>}
-    </div>}
     {message&&<p className="notice" role="status">{message}</p>}
-    <p className="muted">Security limitation: this initial updater verifies authenticated GitHub Actions artifacts by SHA-256.
+    <p className="muted">Security limitation: this updater verifies GitHub Actions artifacts by SHA-256 (optionally authenticated).
       It does not yet verify a Tauri update-signing signature or Windows publisher certificate.
-      Updates require your approval and a working GitHub connection. Never install an unexpected release.</p>
+      Updates require your approval and a working GitHub connection. Never install an unexpected release. For publicly accessible artifacts a token is not needed; if repository visibility changes to private, configure one above.</p>
   </section>;
 }

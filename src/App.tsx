@@ -19,7 +19,7 @@ import ChannelsView from "./Channels";
 import type { ChannelProfile } from "./types";
 import type { GemDraft } from "./types";
 type View =
-  "Script Studio" | "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings" | "Writer Profile" | "Conversation Draft";
+  "Script Studio" | "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings" | "Updates" | "Writer Profile" | "Conversation Draft";
 const views: View[] = [
   "Script Studio",
   "Write",
@@ -32,9 +32,10 @@ const views: View[] = [
   "Preview",
   "Writer Profile",
   "Conversation Draft",
+  "Updates",
   "Settings",
 ];
-const symbols = ["▦", "✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "♧", "☷", "⚙"];
+const symbols = ["▦", "✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "♧", "☷", "⟳", "⚙"];
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [channels, setChannels] = useState<ChannelProfile[]>([]);
@@ -54,6 +55,7 @@ export default function App() {
   );
   const [focus, setFocus] = useState(false);
   const [chatOpen,setChatOpen] = useState(false);
+  const [availableUpdate,setAvailableUpdate] = useState<string|null>(null);
   const [source, setSource] = useState<Source | null>(null);
   const [captureGem, setCaptureGem] = useState<Partial<GemDraft> | null>(null);
   const [theme, setTheme] = useState(
@@ -108,6 +110,14 @@ export default function App() {
     wide.addEventListener("change", collapse);
     return () => wide.removeEventListener("change", collapse);
   }, []);
+  useEffect(()=>{
+    if(!isTauri())return;
+    let active=true;
+    void invoke<{available:boolean;version?:string}>("update_check")
+      .then(info=>{if(active&&info.available)setAvailableUpdate(info.version||null)})
+      .catch(()=>{}); // The full error is available from the Updates screen.
+    return()=>{active=false};
+  },[]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("noema-theme", theme);
@@ -288,7 +298,7 @@ export default function App() {
     Conversations: isScript ? "Script conversations" : "Conversations",
     Memory: isScript ? "Script memory" : "Project memory", Frameworks: "Core frameworks",
     Channels: "Channel profiles", Gems: isScript ? "Script gems" : "Writing gems",
-    Preview: isScript ? "Draft preview" : "Book preview", "Writer Profile": "Writer profile", "Conversation Draft": "Conversation draft", Settings: "Settings",
+    Preview: isScript ? "Draft preview" : "Book preview", "Writer Profile": "Writer profile", "Conversation Draft": "Conversation draft", Updates: "Updates", Settings: "Settings",
   }[v]);
   const switchWorkspace = (type: Project["project_type"]) => void action(async () => {
     const existing = projects.find(p => p.project_type === type);
@@ -356,7 +366,7 @@ export default function App() {
                 disabled={!project || busy}
               >
                 <span aria-hidden="true">{symbols[views.indexOf(v)]}</span>
-                {viewLabel(v)}
+                {viewLabel(v)} {v==="Updates"&&availableUpdate?" · "+availableUpdate:""}
               </button>
             ))}
           </nav>
@@ -587,6 +597,8 @@ export default function App() {
                 onOpenScript={p=>void action(()=>activate(p))}
                 onNewScript={channelId=>{setNewScriptChannel(channelId);setNewProject(true)}}
               />
+            ) : view === "Updates" ? (
+              <div className="content-view"><Updates beforeInstall={async()=>await flushRef.current()} onError={report}/></div>
             ) : view === "Writer Profile" ? (
               <WriterProfile onError={report}/>
             ) : view === "Conversation Draft" ? (

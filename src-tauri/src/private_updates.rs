@@ -24,10 +24,10 @@ fn artifact_download_request(client: &Client, token: &str, url: &str) -> reqwest
     // GitHub Actions /zip first responds with 302 to an expiring archive URL.
     // octet-stream is NOT the supported Accept type for this REST endpoint.
     // Reqwest follows the redirect; it strips bearer auth across hosts.
-    client.get(url)
-        .bearer_auth(token)
+    let request=client.get(url)
         .header("Accept", GITHUB_API_MEDIA_TYPE)
-        .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
+        .header("X-GitHub-Api-Version", GITHUB_API_VERSION);
+    if token.is_empty(){request}else{request.bearer_auth(token)}
 }
 #[cfg(test)]
 mod tests {
@@ -43,6 +43,10 @@ mod tests {
         assert_eq!(req.headers().get("x-github-api-version").unwrap(),"2022-11-28");
         assert!(!req.headers().contains_key("content-type"));
         assert!(req.headers().contains_key("authorization"));
+        let public_request=artifact_download_request(&client,"",
+            "https://api.github.com/repos/StrokeDot/NOEMA/actions/artifacts/123/zip")
+            .build().unwrap();
+        assert!(!public_request.headers().contains_key("authorization"));
     }
 }
 
@@ -63,10 +67,11 @@ fn api(url: &str) -> String {
     format!("https://api.github.com/repos/{OWNER_REPO}/{url}")
 }
 async fn get_json(client: &Client, token: &str, url: &str) -> Result<Value, String> {
-    let response = client.get(url)
-        .bearer_auth(token)
-        .header("Accept", "application/vnd.github+json")
-        .send().await.map_err(|e|format!("Cannot connect to GitHub: {e}"))?;
+    let mut request=client.get(url)
+        .header("Accept", GITHUB_API_MEDIA_TYPE)
+        .header("X-GitHub-Api-Version",GITHUB_API_VERSION);
+    if !token.is_empty(){request=request.bearer_auth(token);}
+    let response = request.send().await.map_err(|e|format!("Cannot connect to GitHub: {e}"))?;
     let status=response.status();
     if !status.is_success() {
         return Err(match status {
@@ -123,7 +128,7 @@ async fn discover(client: &Client, token: &str, current: &str) -> Result<Option<
 }
 async fn fetch_update() -> Result<(Client,String,Value),String> {
     let client=client()?;
-    let token=get_token()?;
+    let token=get_token().unwrap_or_default();
     let current=env!("CARGO_PKG_VERSION");
     let update=discover(&client,&token,current).await?.ok_or("NOEMA is already up to date.")?;
     Ok((client,token,update))
@@ -131,7 +136,7 @@ async fn fetch_update() -> Result<(Client,String,Value),String> {
 #[tauri::command]
 pub fn update_status() -> Value {
     json!({"installed":env!("CARGO_PKG_VERSION"),"authorized":get_token().is_ok(),
-        "source":"Private GitHub Actions","requires_manual_approval":true})
+        "source":"GitHub Actions (public download; optional private token)","requires_manual_approval":true})
 }
 #[tauri::command]
 pub async fn update_connect(token:String) -> Result<Value,String> {
@@ -158,7 +163,7 @@ pub fn update_disconnect() -> Result<Value,String> {
 #[tauri::command]
 pub async fn update_check() -> Result<Value,String> {
     let client=client()?;
-    let token=get_token()?;
+    let token=get_token().unwrap_or_default();
     let current=env!("CARGO_PKG_VERSION");
     Ok(discover(&client,&token,current).await?.unwrap_or(json!({
         "available":false,"installed":current
