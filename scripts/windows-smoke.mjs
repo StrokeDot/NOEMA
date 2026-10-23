@@ -30,7 +30,7 @@ async function stop() {
   browser = undefined;
 }
 const installDir = join(process.env.RUNNER_TEMP, 'noema-installed-smoke');
-async function launch(executable) {
+async function launch(executable, modern = false) {
   app = spawn(executable, [], { stdio: 'inherit', env: { ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9222' } });
   app.on('error', e => console.error(e));
@@ -49,7 +49,11 @@ async function launch(executable) {
   }
   if (!page) throw new Error('Installed app did not load its embedded frontend.');
   page.setDefaultTimeout(15000);
-  await expect(page.getByRole('button', { name: '+ New writing project' })).toBeVisible({ timeout: 30000 });
+  if (modern) {
+    await expect(page.getByRole('heading', {name:'Your books begin here.'})).toBeVisible({ timeout: 30000 });
+  } else {
+    await expect(page.getByRole('button', { name: '+ New writing project' })).toBeVisible({ timeout: 30000 });
+  }
   report.launches++;
   report.embeddedAssets = true;
   return page;
@@ -80,60 +84,76 @@ try {
   // https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645
   await run('reg.exe', ['add', 'HKLM\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments', '/v', 'noema.exe', '/t', 'REG_SZ', '/d', '--remote-debugging-port=9222', '/f']);
   testPolicy = true;
-  let page = await launch(executable);
+  const baseline = !!process.env.NOEMA_BASELINE_DIR;
+  let page = await launch(executable, !baseline);
+  if (!baseline) await page.getByRole('button',{name:'+ Create a book'}).click();
   const modal = page.getByRole('dialog', { name: 'New writing project' });
-  if (!(await modal.isVisible())) await page.getByRole('button', { name: '+ New writing project' }).click();
-  if (await modal.getByRole('button', { name: 'Book project', exact: false }).isVisible())
-    await modal.getByRole('button', { name: 'Book project', exact: false }).click();
+  if (baseline) {
+    if (!(await modal.isVisible())) await page.getByRole('button', { name: '+ New writing project' }).click();
+    if (await modal.getByRole('button', { name: 'Book project', exact: false }).isVisible())
+      await modal.getByRole('button', { name: 'Book project', exact: false }).click();
+  }
   await modal.getByLabel('Book title', { exact: true }).fill('Windows installer persistence check');
   await modal.getByLabel('Author', { exact: true }).fill('NOEMA verification');
-  await modal.getByRole('button', { name: 'Create writing project' }).click();
+  await modal.getByRole('button', { name: baseline ? 'Create writing project' : 'Create book →' }).click();
   await expect(modal).toBeHidden();
+  if (!baseline) await page.getByRole('button',{name:'Manuscript',exact:true}).click();
   page.once('dialog', d => d.accept('Installed chapter'));
   await page.getByRole('button', { name: 'Create a chapter', exact: true }).click();
   await page.locator('[contenteditable=true]').fill('Written in the installed Windows application.');
   await expect(page.getByText('● Saved on this computer')).toBeVisible();
   await stop();
-  page = await launch(executable);
+  page = await launch(executable, !baseline);
+  if (!baseline) await page.getByRole('button',{name:'Open book: Windows installer persistence check'}).click();
   await expect(page.locator('[contenteditable=true]')).toContainText('Written in the installed Windows application.');
   report.bookReopened = true;
-  await page.getByRole('button', { name: '+ New writing project' }).click();
-  const project = page.getByRole('dialog', { name: 'New writing project' });
-  if (await project.getByRole('button', { name: 'YouTube channel script', exact: false }).isVisible())
-    await project.getByRole('button', { name: 'YouTube channel script', exact: false }).click();
-  else await project.getByLabel('Project format').selectOption('Video Script');
-  await project.getByLabel('New channel name').fill('Installed channel');
-  await project.getByRole('button', { name: '+ Create channel' }).click();
-  await expect(project.getByLabel('Video script channel')).not.toHaveValue('');
-  await project.getByLabel('Video script title').fill('Installed video');
-  await project.getByLabel('Author', { exact: true }).fill('NOEMA verification');
-  await project.getByRole('button', { name: 'Create writing project' }).click();
-  await expect(project).toBeHidden();
-  await page.getByRole('button', { name: 'Create first scene' }).click();
-  await page.getByLabel('Narration / voiceover').fill('Persistent narration.');
-  await page.getByLabel('Footage and visual directions').fill('Persistent visual direction.');
-  await expect(page.locator('.cue-header-actions [role=status]')).toHaveText('Saved on this computer');
   await stop();
-  page = await launch(executable);
-  await expect(page.getByLabel('Narration / voiceover')).toHaveValue('Persistent narration.');
-  await expect(page.getByLabel('Footage and visual directions')).toHaveValue('Persistent visual direction.');
-  report.scriptReopened = true;
-  await stop();
-  if (process.env.NOEMA_BASELINE_DIR) {
-    // Upgrade the same installation, leaving its real app-data folder in place.
-    await run(currentInstaller, ['/S', `/D=${installDir}`]);
+  if (baseline) {
+    // A 0.1.0 installation can still create video scripts. Their existing data
+    // must remain in SQLite, but 0.1.10 must not display or recreate the UI.
+    page = await launch(executable);
+    await page.getByRole('button', { name: '+ New writing project' }).click();
+    const project = page.getByRole('dialog', { name: 'New writing project' });
+    if (await project.getByRole('button', { name: 'YouTube channel script', exact: false }).isVisible())
+      await project.getByRole('button', { name: 'YouTube channel script', exact: false }).click();
+    else await project.getByLabel('Project format').selectOption('Video Script');
+    await project.getByLabel('New channel name').fill('Installed channel');
+    await project.getByRole('button', { name: '+ Create channel' }).click();
+    await expect(project.getByLabel('Video script channel')).not.toHaveValue('');
+    await project.getByLabel('Video script title').fill('Installed video');
+    await project.getByLabel('Author', { exact: true }).fill('NOEMA verification');
+    await project.getByRole('button', { name: 'Create writing project' }).click();
+    await expect(project).toBeHidden();
+    await page.getByRole('button', { name: 'Create first scene' }).click();
+    await page.getByLabel('Narration / voiceover').fill('Persistent narration.');
+    await page.getByLabel('Footage and visual directions').fill('Persistent visual direction.');
+    await expect(page.locator('.cue-header-actions [role=status]')).toHaveText('Saved on this computer');
+    await stop();
     page = await launch(executable);
     await expect(page.getByLabel('Narration / voiceover')).toHaveValue('Persistent narration.');
     await expect(page.getByLabel('Footage and visual directions')).toHaveValue('Persistent visual direction.');
-    await expect(page.getByRole('button', {name:'Manuscript', exact:true})).toHaveCount(0);
-    await page.getByRole('button', {name:'Books', exact:true}).click();
-    await expect(page.locator('[contenteditable=true]')).toContainText('Written in the installed Windows application.');
-    await expect(page.getByRole('button', {name:'Channel profiles', exact:true})).toHaveCount(0);
+    report.scriptReopened = true;
     await stop();
-    page = await launch(executable);
+    await run(currentInstaller, ['/S', `/D=${installDir}`]);
+    page = await launch(executable,true);
+    await expect(page.getByRole('button',{name:'YouTube channels'})).toHaveCount(0);
+    await expect(page.getByText('1 older video-script project remains preserved',{exact:false})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Open book: Installed video'})).toHaveCount(0);
+    await page.getByRole('button',{name:'Open book: Windows installer persistence check'}).click();
+    await expect(page.locator('[contenteditable=true]')).toContainText('Written in the installed Windows application.');
+    await page.getByRole('button',{name:'← All books'}).click();
+    await expect(page.getByRole('heading',{name:'Your books begin here.'})).toBeVisible();
+    await stop();
+    page = await launch(executable,true);
+    await expect(page.getByRole('button',{name:'Open book: Windows installer persistence check'})).toBeVisible();
+    await page.getByRole('button',{name:'Open book: Windows installer persistence check'}).click();
     await expect(page.locator('[contenteditable=true]')).toContainText('Written in the installed Windows application.');
     report.upgradePreserved = true;
-  } else page = await launch(executable);
+  } else {
+    page = await launch(executable,true);
+    await page.getByRole('button',{name:'Open book: Windows installer persistence check'}).click();
+    await expect(page.locator('[contenteditable=true]')).toContainText('Written in the installed Windows application.');
+  }
   await page.screenshot({ path: join(output, 'installed-windows-app.png') });
   await stop();
 } catch (error) {

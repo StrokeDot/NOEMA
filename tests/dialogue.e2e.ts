@@ -4,14 +4,13 @@ test("book dialogue keeps separate conversation purposes and preserves them afte
   const errors:string[]=[];
   page.on("pageerror",e=>errors.push(e.message));
   await page.goto("/");
+  await expect(page.getByRole("heading",{name:"Your books begin here."})).toBeVisible();
+  await page.getByRole("button",{name:"+ Create a book"}).click();
   const project=page.getByRole("dialog",{name:"New writing project"});
-  // A fresh browser test database starts with this onboarding dialog;
-  // wait for initialization instead of clicking behind a transitioning overlay.
   await expect(project).toBeVisible();
-  await project.getByRole("button",{name:"Book project",exact:false}).click();
   await project.getByLabel("Book title",{exact:true}).fill("Dialogue-first book");
   await project.getByLabel("Author",{exact:true}).fill("Author");
-  await project.getByRole("button",{name:"Create writing project"}).click();
+  await project.getByRole("button",{name:"Create book →"}).click();
   await expect(project).toBeHidden();
   await page.getByRole("button",{name:"Book dialogue",exact:true}).click();
   await expect(page.getByText("What shall we think through?")).toBeVisible();
@@ -37,6 +36,8 @@ test("book dialogue keeps separate conversation purposes and preserves them afte
   await expect(page.getByText("Discover and download")).toBeVisible();
   await expect(page.getByRole("button",{name:"Download"}).first()).toBeVisible();
   await page.reload();
+  await expect(page.getByRole("heading",{name:"Your books begin here."})).toBeVisible();
+  await page.getByRole("button",{name:"Open book: Dialogue-first book"}).click();
   await page.getByRole("button",{name:"Book dialogue",exact:true}).click();
   await expect(page.locator(".dialogue-topline").getByRole("heading",{name:"Moral freedom"})).toBeVisible();
   await expect(page.locator(".dialogue-topline").getByText("Clarify and challenge the concept of free will.")).toBeVisible();

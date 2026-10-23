@@ -6,15 +6,14 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "+ New writing project" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your books begin here." })).toBeVisible();
+  await page.getByRole("button", { name: "+ Create a book" }).click();
   const modal = page.getByRole("dialog", { name: "New writing project" });
-  if (!(await modal.isVisible())) await page.getByRole("button", { name: "+ New writing project" }).click();
-  await page.getByRole("button", { name: "Book project", exact: false }).click();
   await page
     .getByLabel("Book title", { exact: true })
     .fill("26 Reasons Why Jews Should Believe in Jesus");
   await page.getByLabel("Author", { exact: true }).fill("Alejandro Rosillon");
-  await page.getByRole("button", { name: "Create writing project" }).click();
+  await page.getByRole("button", { name: "Create book →" }).click();
   await expect(page.getByRole("dialog",{name:"New writing project"})).toBeHidden();
   await page.getByRole("button", { name: "Manuscript", exact: true }).click();
   await expect(
@@ -33,6 +32,8 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   await expect(manuscript.locator("strong")).toContainText("honest question");
   await expect(page.getByText("● Saved on this computer")).toBeVisible();
   await page.reload();
+  await expect(page.getByRole("heading",{name:"Your books begin here."})).toBeVisible();
+  await page.getByRole("button",{name:"Open book: 26 Reasons Why Jews Should Believe in Jesus"}).click();
   await expect(manuscript).toContainText("honest question");
   await expect(manuscript.locator("strong")).toContainText("honest question");
   // An immediate chapter switch flushes the debounced final edit.
@@ -126,13 +127,13 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "+ New writing project" }).click();
-  await page.getByRole("button", { name: "Book project", exact: false }).click();
+  await page.getByRole("button",{name:"Open book: 26 Reasons Why Jews Should Believe in Jesus"}).click();
+  await page.getByRole("button", { name: "+ New book" }).click();
   await page
     .getByLabel("Book title", { exact: true })
     .fill("Independent project");
   await page.getByLabel("Author", { exact: true }).fill("Another author");
-  await page.getByRole("button", { name: "Create writing project" }).click();
+  await page.getByRole("button", { name: "Create book →" }).click();
   await expect(page.getByRole("dialog",{name:"New writing project"})).toBeHidden();
   await page.getByLabel("Search research").fill("responsibility");
   await expect(page.getByText("0 passages on this page")).toBeVisible();
@@ -172,14 +173,18 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
 test("a narrow window opens with an unobstructed writing workspace", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "+ New writing project" })).toBeVisible();
+  await expect(page.getByRole("heading",{name:"Your books begin here."})).toBeVisible();
+  await page.getByRole("button",{name:"+ Create a book"}).click();
   const modal = page.getByRole("dialog", { name: "New writing project" });
-  if (!(await modal.isVisible())) await page.getByRole("button", { name: "+ New writing project" }).click();
-  await modal.getByRole("button", { name: "Book project", exact: false }).click();
   await modal.getByLabel("Book title", { exact: true }).fill("Small-window book");
   await modal.getByLabel("Author", { exact: true }).fill("Author");
-  await modal.getByRole("button", { name: "Create writing project" }).click();
-  await expect(modal).toBeHidden();
+  await modal.getByRole("button", { name: "Create book →" }).click();
+  // Project creation also refreshes chapter counts across the whole book shelf.
+  // Surface any form error in CI rather than silently failing this assertion.
+  try{await expect(modal).toBeHidden({timeout:15000})}
+  catch(e){throw new Error("New-book form did not close: "+
+    (await modal.locator('[role="alert"]').allTextContents()).join(" | ")+"; "+String(e))}
+
   await expect(page.locator(".research-panel")).toHaveCount(0);
   // A new book opens at its two-source onboarding; writing remains one click away.
   await page.getByRole("button",{name:"Manuscript",exact:true}).click();
@@ -188,6 +193,7 @@ test("a narrow window opens with an unobstructed writing workspace", async ({ pa
   await page.locator("[contenteditable=true]").fill("Writing on a smaller screen.");
   await expect(page.getByText("● Saved on this computer")).toBeVisible();
   await page.reload();
+  await page.getByRole("button",{name:"Open book: Small-window book"}).click();
   await expect(page.locator("[contenteditable=true]")).toContainText("Writing on a smaller screen.");
   await expect(page.locator(".research-panel")).toHaveCount(0);
 });
