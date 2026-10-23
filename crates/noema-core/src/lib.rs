@@ -71,7 +71,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 9 {
+        if ver > 10 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -119,6 +119,11 @@ impl Store {
         if ver < 9 {
             let tx=conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v9_writer_memory.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 10 {
+            let tx=conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v10_author_sources_critique.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -261,7 +266,7 @@ impl Store {
                     "type" => "kind,name COLLATE NOCASE,id",
                     _ => "created_at DESC,id",
                 };
-                let sql = format!("SELECT id,name,kind,tags,role,use_guidance,working_document,created_at,warning FROM sources WHERE project_id=? AND (?='' OR kind=?) AND (instr(lower(name),lower(?))>0 OR instr(lower(tags),lower(?))>0) ORDER BY {order} LIMIT 50 OFFSET ?");
+                let sql = format!("SELECT id,name,kind,tags,role,use_guidance,working_document,source_origin,created_at,warning FROM sources WHERE project_id=? AND (?='' OR kind=?) AND (instr(lower(name),lower(?))>0 OR instr(lower(tags),lower(?))>0) ORDER BY {order} LIMIT 50 OFFSET ?");
                 rows(&self.conn, &sql, params![required(&a,"project_id")?,string(&a,"kind"),string(&a,"kind"),string(&a,"filter"),string(&a,"filter"),offset(&a)])
             }
             "create_chapter_from_text" => {
@@ -328,11 +333,13 @@ impl Store {
                 let interpreted=required(&a,"interpreted_text")?;
                 let answer=required(&a,"assistant_response")?;
                 if interpreted.len()>100_000 || answer.len()>100_000 {return Err("AI writing exceeds the size limit".into());}
+                let critique=string(&a,"critical_review").trim();
+                if critique.len()>100_000{return Err("Critical review is too long".into());}
                 let suggestions=a["profile_suggestions"].as_array().cloned().unwrap_or_default();
                 let draft=a["draft_candidate"].as_str().unwrap_or("").trim();
                 let tx=self.conn.transaction()?;
-                let changed=tx.execute("UPDATE writing_turns SET interpreted_text=?,assistant_response=?,provider=?,model=?,state='complete',updated_at=? WHERE id=? AND project_id=? AND state='pending'",
-                    params![interpreted,answer,string(&a,"provider"),string(&a,"model"),now(),tid,pid])?;
+                let changed=tx.execute("UPDATE writing_turns SET interpreted_text=?,assistant_response=?,critical_review=?,provider=?,model=?,state='complete',updated_at=? WHERE id=? AND project_id=? AND state='pending'",
+                    params![interpreted,answer,critique,string(&a,"provider"),string(&a,"model"),now(),tid,pid])?;
                 if changed!=1 {return Err("Conversation turn not found or already finalized".into());}
                 for item in suggestions.into_iter().take(3) {
                     let Some(dimension)=item["dimension"].as_str() else {continue};
@@ -357,8 +364,17 @@ impl Store {
                 tx.commit()?;
                 Ok(json!(true))
             }
+            "mark_critique_explored" => {
+                let pid=required(&a,"project_id")?;
+                let tid=required(&a,"turn_id")?;
+                let explored=a["explored"].as_bool().ok_or("Missing critique review state")?;
+                let n=self.conn.execute("UPDATE writing_turns SET critique_explored=?,updated_at=? WHERE id=? AND project_id=? AND state='complete'",
+                    params![if explored{1}else{0},now(),tid,pid])?;
+                if n!=1{return Err("Completed turn not found in this project".into());}
+                Ok(json!({"explored":explored}))
+            }
             "writing_turns" => rows(&self.conn,
-                "SELECT id,original_text,interpreted_text,interpretation_author_corrected,assistant_response,provider,model,state,created_at FROM writing_turns WHERE project_id=? ORDER BY created_at,id LIMIT 500",
+                "SELECT id,original_text,interpreted_text,interpretation_author_corrected,assistant_response,critical_review,critique_explored,provider,model,state,created_at FROM writing_turns WHERE project_id=? ORDER BY created_at,id LIMIT 500",
                 params![required(&a,"project_id")?]),
             "correct_turn_meaning" => {
                 let pid=required(&a,"project_id")?;
@@ -477,7 +493,7 @@ impl Store {
                     "SELECT category,title,substr(body,1,2500) AS body FROM memories WHERE project_id=? AND category IN ('Established Positions','Writing Instructions') ORDER BY updated_at DESC LIMIT 30",
                     params![pid])?;
                 let source_rows=rows(&self.conn,
-                    "SELECT p.id,s.id AS source_id,s.name,s.role,s.use_guidance,s.working_document,p.location,substr(p.text,1,2500) AS text FROM passages p JOIN sources s ON s.id=p.source_id WHERE p.project_id=? ORDER BY p.id DESC LIMIT 1500",
+                    "SELECT p.id,s.id AS source_id,s.name,s.role,s.source_origin,s.use_guidance,s.working_document,p.location,substr(p.text,1,2500) AS text FROM passages p JOIN sources s ON s.id=p.source_id WHERE p.project_id=? ORDER BY p.id DESC LIMIT 1500",
                     params![pid])?;
                 let mut ranked:Vec<(usize,Value)>=source_rows.as_array().unwrap().iter().filter_map(|v|{
                     let txt=v["text"].as_str().unwrap_or("").to_lowercase();
@@ -523,6 +539,16 @@ impl Store {
                 tx.commit()?;
                 Ok(json!(true))
             }
+            "source_origin" => {
+                let pid=required(&a,"project_id")?;
+                let sid=required(&a,"id")?;
+                let origin=required(&a,"origin")?;
+                if origin!="Author" && origin!="External" {return Err("Choose Author or External origin".into());}
+                let count=self.conn.execute("UPDATE sources SET source_origin=? WHERE id=? AND project_id=?",
+                    params![origin,sid,pid])?;
+                if count!=1{return Err("Source not found in this book project".into());}
+                Ok(json!({"origin":origin}))
+            }
             "source_guidance" => {
                 let pid=required(&a,"project_id")?;
                 let sid=required(&a,"id")?;
@@ -544,7 +570,7 @@ impl Store {
                     "SELECT f.id,f.title,f.perspective,f.principles,f.qualifications FROM project_frameworks pf JOIN belief_frameworks f ON f.id=pf.framework_id WHERE pf.project_id=? AND pf.active=1 AND f.status='Confirmed' AND f.deleted=0 ORDER BY f.perspective,f.title",
                     params![pid])?;
                 let sources=rows(&self.conn,
-                    "SELECT id,name,kind,role,use_guidance,working_document FROM sources WHERE project_id=? ORDER BY CASE role WHEN 'Primary Reference' THEN 0 WHEN 'Supporting' THEN 1 WHEN 'Critical Perspective' THEN 2 ELSE 3 END,created_at DESC LIMIT 250",
+                    "SELECT id,name,kind,role,use_guidance,working_document,source_origin FROM sources WHERE project_id=? ORDER BY CASE role WHEN 'Primary Reference' THEN 0 WHEN 'Supporting' THEN 1 WHEN 'Critical Perspective' THEN 2 ELSE 3 END,created_at DESC LIMIT 250",
                     params![pid])?;
                 Ok(json!({"frameworks":frameworks,"sources":sources}))
             }
@@ -902,7 +928,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":9}
+            "path":self.root.to_string_lossy(),"schema":10}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);
