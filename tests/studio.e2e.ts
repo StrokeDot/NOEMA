@@ -178,7 +178,7 @@ test("a narrow window opens with an unobstructed writing workspace", async ({ pa
   const modal = page.getByRole("dialog", { name: "New writing project" });
   await modal.getByLabel("Book title", { exact: true }).fill("Small-window book");
   await modal.getByLabel("Author", { exact: true }).fill("Author");
-  await modal.getByRole("button", { name: "Create writing project" }).click();
+  await modal.getByRole("button", { name: "Create book →" }).click();
   await expect(modal).toBeHidden();
   await expect(page.locator(".research-panel")).toHaveCount(0);
   // A new book opens at its two-source onboarding; writing remains one click away.
