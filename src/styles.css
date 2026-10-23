@@ -1407,3 +1407,13 @@ padding:10px;background:var(--paper);min-width:0;}
 .dialogue-model-help p{font-size:11px;color:var(--muted);line-height:1.6}
 .dialogue-model-help code{user-select:text;overflow-wrap:anywhere}
 .dialogue-pull-status p{font-size:11px;line-height:1.5;margin:6px 0}
+
+
+/* Reversible dialogue deletion and Ollama connection recovery. */
+.dialogue-delete-button{color:var(--muted);border-color:var(--line);font-size:11px}
+.dialogue-delete-button:hover{color:#c8746b;border-color:#b8675b}
+.dialogue-trashed{margin:12px 5px 15px;border-top:1px solid var(--line);padding:13px 8px;font-size:11px;color:var(--muted)}
+.dialogue-trashed summary{cursor:pointer;padding:6px 0;font-size:11px}
+.dialogue-trashed-item{margin-top:7px;padding:8px;display:flex;gap:8px;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:9px}
+.dialogue-trashed-item span{white-space:nowrap;text-overflow:ellipsis;overflow:hidden;min-width:0}
+.dialogue-trashed-item button{padding:6px;color:var(--accent);font-size:10px;flex:none}
