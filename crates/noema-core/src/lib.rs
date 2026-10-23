@@ -339,6 +339,7 @@ impl Store {
                 let answer=required(&a,"assistant_response")?;
                 if interpreted.len()>100_000 || answer.len()>100_000 {return Err("AI writing exceeds the size limit".into());}
                 let critique=string(&a,"critical_review").trim();
+                if critique.is_empty(){return Err("An independent critique must accompany every completed AI response.".into());}
                 if critique.len()>100_000{return Err("Critical review is too long".into());}
                 let suggestions=a["profile_suggestions"].as_array().cloned().unwrap_or_default();
                 let draft=a["draft_candidate"].as_str().unwrap_or("").trim();
