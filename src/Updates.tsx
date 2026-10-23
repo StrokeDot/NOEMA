@@ -65,6 +65,9 @@ export default function Updates({
     <div className="eyebrow">GITHUB IN-APP UPDATE SERVICE</div>
     <h2>NOEMA updates</h2>
     <p>Installed version: <strong>{state?.installed??"Checking…"}</strong></p>
+    <p><strong>Update from inside NOEMA.</strong> Check GitHub and choose Install. NOEMA will save the
+      open manuscript, verify the archive, back up local projects and launch the Windows installer.
+      The existing installer flow closes NOEMA; reopen it afterward if it does not restart automatically.</p>
     <p>Check GitHub for a newer Windows build, download it inside NOEMA, verify the SHA-256 artifact digest,
       create a safety backup, then update after closing the editor. No browser download is needed once this updater is installed.</p>
     <div className="row"><button className="primary" onClick={()=>void check()} disabled={busy}>
@@ -97,7 +100,7 @@ export default function Updates({
         <h3>NOEMA {newVersion.version} is available</h3>
         <p>A successful main-branch Windows installer was found. Your writing will be backed up before installation.</p>
         <button className="primary" disabled={busy} onClick={()=>void install()}>
-          {busy?"Preparing update…":"Install update and close NOEMA"}
+          {busy?"Preparing update…":"Install update inside NOEMA"}
         </button>
         {newVersion.url && <p className="micro">Build: {newVersion.url}</p>}
       </div> : newVersion && <p className="notice">You are using the newest successful Windows version available to this updater.</p>}

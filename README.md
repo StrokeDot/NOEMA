@@ -240,3 +240,9 @@ NOEMA 0.1.2–0.1.3 can discover newer builds but could fail to download the Git
 **In-app GitHub updates:** Updates now have their own navigation entry, an automatic startup check, and Check for updates / Install inside the app. The public StrokeDot/NOEMA GitHub Actions artifact endpoint can be queried without a private token where GitHub permits anonymous access. A private repo requires authorized GitHub access in NOEMA. A digest and local backup are checked before installation. No fully independent Tauri signature verification yet. GitHub Actions artifacts expire; long-term releases should move to signed GitHub Releases.
 
 **Bootstrap:** This is code in NOEMA 0.1.6. If the PC's installed version has no working updater, that running executable cannot acquire this code without one prior external install. If the previously installed authenticated updater works, version 0.1.6 can be installed through it, without downloading the installer manually. The native installation test does not prove an authenticated in-app GitHub network update on the writer's PC.
+
+## Update and critical-review usability
+
+The top toolbar offers **Update NOEMA · version** when a newer verified GitHub Actions artifact is detected. The Updates screen can check GitHub and stage installation without a browser download. If GitHub requires Actions authentication, the user configures a fine-grained Actions:Read token once in Settings. The existing updater verifies GitHub's SHA-256 artifact digest, creates a backup, and starts installation after the program closes; full in-app restart still needs a dedicated end-to-end validation, so the UI does not promise it.
+
+For writing arguments, the AI context also now includes earlier critical reviews and whether the author marked them explored, not merely the AI's previously agreeable replies. Confirmed author framework remains separate from research by other people.

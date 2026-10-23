@@ -518,7 +518,7 @@ impl Store {
                 let confirmed=rows(&self.conn,
                     "SELECT dimension,claim FROM writer_profile_notes WHERE state='Confirmed' ORDER BY updated_at DESC LIMIT 80",[])?;
                 let prior_turns=rows(&self.conn,
-                    "SELECT original_text,interpreted_text,assistant_response FROM writing_turns WHERE project_id=? AND state='complete' ORDER BY created_at DESC,id DESC LIMIT 8",
+                    "SELECT original_text,interpreted_text,assistant_response,critical_review,critique_explored FROM writing_turns WHERE project_id=? AND state='complete' ORDER BY created_at DESC,id DESC LIMIT 12",
                     params![pid])?;
                 Ok(json!({"project":meta[0],"frameworks":frameworks,"established_positions":positions,"writer_profile":confirmed,"prior_turns":prior_turns,
                     "passages":passages,"recent_messages":recent,"recent_chapters":chapters}))

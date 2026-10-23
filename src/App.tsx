@@ -481,6 +481,11 @@ export default function App() {
             <span> / {viewLabel(view)}</span>
           </div>
           <div className="top-actions">
+            {availableUpdate && <button
+              className="primary" aria-label={"Update NOEMA to "+availableUpdate}
+              onClick={()=>changeView("Updates")}>
+              Update NOEMA · {availableUpdate}
+            </button>}
             {project && <button className="attach-source-button" title="Attach books and supporting sources to this writing project" onClick={()=>void attachWritingSources()}>
               + Attach sources
             </button>}
