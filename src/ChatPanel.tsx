@@ -345,7 +345,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
               <p>Check free space on the model storage drive and your Ollama version. Retrying can reuse downloaded layers.</p>
               <button type="button" disabled={!ollamaReady} onClick={()=>{if(lastDownload)void pullModel(lastDownload)}}>Retry {lastDownload}</button>
             </>}
-          </div>
+          </div>}
           <details className="dialogue-model-help"><summary>Download not starting? Troubleshooting</summary>
             <p>Ollama must be running and updated. GPT-OSS needs about 14 GB of disk space; Gemma 4 12B about 8 GB, plus temporary space. Downloads don't consume GPU VRAM.</p>
             <p>Open <code>http://127.0.0.1:11434/api/tags</code> in your browser to check local inventory. For detailed network errors, the Ollama terminal can run <code>ollama pull gemma4:12b</code> or <code>ollama pull gpt-oss:20b</code>.</p>
