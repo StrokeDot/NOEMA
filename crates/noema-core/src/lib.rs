@@ -365,7 +365,7 @@ impl Store {
                 }
                 let tid=id();
                 self.conn.execute("INSERT INTO writing_turns(id,project_id,original_text,conversation_id,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                    params![tid,pid,original,if dialogue.is_empty(){None}else{Some(dialogue.as_str())},now(),now()])?;
+                    params![tid,pid,original,if dialogue.is_empty(){None}else{Some(dialogue)},now(),now()])?;
                 if !dialogue.is_empty(){
                     self.conn.execute("UPDATE writing_conversations SET updated_at=? WHERE id=?",
                         params![now(),dialogue])?;
