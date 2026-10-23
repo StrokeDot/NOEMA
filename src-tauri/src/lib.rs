@@ -85,6 +85,8 @@ pub fn run() {
             ai_chat::ai_status,
             ai_chat::ai_configure,
             ai_chat::ai_disconnect,
+            ai_chat::ai_configure_provider,
+            ai_chat::ai_disconnect_provider,
             ai_chat::ai_reply,
             ai_chat::ai_local_models,
             ai_chat::ai_start_ollama,
