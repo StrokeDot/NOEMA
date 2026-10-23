@@ -1,12 +1,12 @@
-# NOEMA — Version 0.1
+# NOEMA — Version 0.1.8 release candidate
 
 **Where Thought Becomes Legacy.**
 
-A local-first writing studio built with Tauri 2, React, TypeScript, Tiptap, Rust, and SQLite FTS5. Books, video scripts, and accumulated knowledge are the center of the application. No AI account, API key, cloud database, telemetry, or network service is required for ordinary use. **AI model connections are not yet implemented.**
+A local-first writing studio built with Tauri 2, React, TypeScript, Tiptap, Rust, and SQLite FTS5. **Book writing is NOEMA's focus**; legacy script tools remain for migration to SCRIPTORIA. Books, research and author-approved knowledge are stored locally. An optional AI conversation can use a separately billed OpenAI API key or an independently installed local Ollama model; offline editing doesn't require either.
 
 ## Delivery status
 
-This is a source distribution, not a prebuilt Windows installer. The frontend and Rust storage core have been built and tested in the development environment. The native desktop shell and Windows installation/relaunch workflow still require verification on Windows. See `docs/VERIFICATION.md` for exact results and remaining gates. Do not treat this source package as a fully certified desktop release.
+The Windows GitHub Actions workflow builds installers and verifies installed-app persistence on disposable Windows machines. The **in-app updater** can check successful main-branch artifacts and stage an installation without a browser download. The 0.1.8 relaunch attempt and full in-app upgrade sequence are still awaiting dedicated end-to-end verification. These artifacts are unsigned previews, not independently publisher-signed releases. See [development verification](docs/VERIFICATION.md).
 
 ## Start on Windows
 
@@ -80,7 +80,7 @@ noema.sqlite3-shm   SQLite shared-memory file while active
 originals/         immutable copies of imported files
 ```
 
-SQLite uses foreign keys, WAL journaling, `synchronous=FULL`, atomic transactions, and additive schema migrations through version 3. Newer unknown schema versions are rejected rather than overwritten. Revision snapshots capture the previous draft at most once a minute; restoring creates an additional snapshot of the current draft. Revisions are not automatically purged. Deleted chapters remain in SQLite; a graphical trash/recovery screen is not yet implemented.
+SQLite uses foreign keys, WAL journaling, `synchronous=FULL`, atomic transactions, and additive schema migrations through version 11. Newer unknown schema versions are rejected rather than overwritten. Revision snapshots capture the previous draft at most once a minute; restoring creates an additional snapshot of the current draft. Revisions are not automatically purged. Deleted chapters remain in SQLite; a graphical trash/recovery screen is not yet implemented.
 
 The 400 ms autosave debounce means an abrupt OS/process crash can lose the latest unsaved keystrokes. Normal chapter switching and normal window close flush pending writes. Errors remain visible; failed writes remain in editor memory for retry. No local app can guarantee recovery after disk loss: use backups.
 
@@ -169,7 +169,7 @@ Video Script projects now open in **Video script studio**. Create and arrange sc
 
 The original **Manuscript** view remains available for older freeform drafts. Existing books, script sections, channel profiles, and research are not replaced by the new cue editor. An uploaded research file must belong to the same project to be linked directly.
 
-This is a writing/production planning system, **not** a video rendering or timeline editor. There is no connected AI model, live voice assistant, Filmora integration, or automatic media footage import yet. See [Script Studio specification](docs/VIDEO_SCRIPT_STUDIO.md).
+This is a writing/production planning system, **not** a video rendering or timeline editor. An optional AI connection is available; there is no built-in live voice assistant, Filmora integration, or automatic media footage import yet. See [Script Studio specification](docs/VIDEO_SCRIPT_STUDIO.md).
 
 ## Windows installer verification
 
@@ -180,7 +180,7 @@ and reopen a book and video script in the installed application, without Vite.
 An app-specific WebView2 debugging policy is temporarily set on the disposable
 runner and removed after testing. It is not part of the installed app configuration.
 
-A successful run provides **NOEMA-0.1-Windows-installer** (the installer ZIP) and
+A successful main-branch run provides **NOEMA-<version>-Windows-installer** (the installer ZIP) and
 **NOEMA-Windows-verification** (screenshots and a native smoke-test report).
 Download and extract the installer artifact, then run its `.exe`. The current
 prerelease is unsigned. No programming tools are needed to use the installed app.
@@ -194,7 +194,7 @@ Tests verify the xref/object offsets, extraction on both pages, byte-for-byte
 preservation of the imported original, and the specific no-text/OCR limitation.
 No PDF dependency or importer workaround was required.
 
-Verified installer: [download the Windows artifact](https://github.com/StrokeDot/NOEMA/actions/runs/38858899633/artifacts/12028082487). See [the full verification report](docs/VERIFICATION.md) for test scope, checksums, and limitations.
+Historical baseline 0.1 installer: [GitHub Actions artifact](https://github.com/StrokeDot/NOEMA/actions/runs/38858899633/artifacts/12028082487). See [the full verification report](docs/VERIFICATION.md) for test scope, checksums, and limitations.
 
 ## Version 0.1.1
 
@@ -246,3 +246,13 @@ NOEMA 0.1.2–0.1.3 can discover newer builds but could fail to download the Git
 The top toolbar offers **Update NOEMA · version** when a newer verified GitHub Actions artifact is detected. The Updates screen can check GitHub and stage installation without a browser download. If GitHub requires Actions authentication, the user configures a fine-grained Actions:Read token once in Settings. The existing updater verifies GitHub's SHA-256 artifact digest, creates a backup, and starts installation after the program closes; full in-app restart still needs a dedicated end-to-end validation, so the UI does not promise it.
 
 For writing arguments, the AI context also now includes earlier critical reviews and whether the author marked them explored, not merely the AI's previously agreeable replies. Confirmed author framework remains separate from research by other people.
+
+## NOEMA 0.1.8 release candidate — updates, full-book retrieval, and author-controlled memory
+
+- **In-app update progress:** the updater reports download bytes and the verification/backup/install stages. It attempts to reopen NOEMA after a successful silent Windows installer upgrade. The self-relaunch path is still undergoing end-to-end acceptance testing.
+- **Version discovery:** application, Rust package and Windows installer artifact versions advance to 0.1.8, allowing a 0.1.7 client with a functioning updater to discover the newer successful main-branch build after it is published.
+- **Full-book evidence retrieval:** AI context uses SQLite FTS5 across the complete current project instead of searching only the latest 1,500 passages. When relevant, writer-authored and external references are both represented and still have distinct provenance.
+- **Writer profile corrections:** AI-inferred observations remain Candidate until reviewed; an author can edit/confirm the intended meaning while retaining the exact source quote and a revision trail. Rejected notes do not guide AI output. Schema v11 migration is additive.
+- **Two project libraries:** book onboarding has explicitly named **Writer Sources** and **Reference Sources** upload buttons, sharing the same established local import system.
+
+**Update limitation:** this GitHub Actions artifact updater validates the archive against GitHub's SHA-256 digest but does not yet independently authenticate a publisher's signature. The installer remains unsigned. A 0.1.7 (or earlier) app without a functioning updater requires a one-time bootstrap installation; an older binary cannot add update logic to itself. Thereafter the supported flow is **NOEMA → Updates → Install**, with no manual ZIP or installer download. Always retain your project backups.
