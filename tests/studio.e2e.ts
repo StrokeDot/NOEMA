@@ -179,7 +179,12 @@ test("a narrow window opens with an unobstructed writing workspace", async ({ pa
   await modal.getByLabel("Book title", { exact: true }).fill("Small-window book");
   await modal.getByLabel("Author", { exact: true }).fill("Author");
   await modal.getByRole("button", { name: "Create book →" }).click();
-  await expect(modal).toBeHidden();
+  // Project creation also refreshes chapter counts across the whole book shelf.
+  // Surface any form error in CI rather than silently failing this assertion.
+  try{await expect(modal).toBeHidden({timeout:15000})}
+  catch(e){throw new Error("New-book form did not close: "+
+    (await modal.locator('[role="alert"]').allTextContents()).join(" | ")+"; "+String(e))}
+
   await expect(page.locator(".research-panel")).toHaveCount(0);
   // A new book opens at its two-source onboarding; writing remains one click away.
   await page.getByRole("button",{name:"Manuscript",exact:true}).click();
