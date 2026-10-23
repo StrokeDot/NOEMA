@@ -1393,3 +1393,6 @@ padding:10px;background:var(--paper);min-width:0;}
   .book-library-controls select{max-width:155px}.book-library-grid{grid-template-columns:repeat(auto-fill,minmax(205px,1fr))}
 }
 @media(prefers-reduced-motion:reduce){.book-library-card{transition:none}.book-library-card:hover{transform:none}}
+
+.library-back{display:block;width:calc(100% - 24px);margin:13px 12px 6px;text-align:left;border-radius:9px;background:var(--accent-soft);font-weight:600;color:var(--accent);padding:11px 13px}
+.library-back:hover{border-color:var(--accent)}
