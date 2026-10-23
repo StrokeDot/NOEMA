@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { errorText } from "./api";
 
 type Status = {installed:string;authorized:boolean;source:string;requires_manual_approval:boolean};
 type UpdateInfo = {available:boolean;installed:string;version?:string;run_id?:number;url?:string};
+type UpdateProgress = {stage:string;downloaded?:number;total?:number|null};
 export default function Updates({
   beforeInstall, onError,
 }:{
@@ -15,6 +17,7 @@ export default function Updates({
   const [token,setToken]=useState("");
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
+  const [progress,setProgress]=useState<UpdateProgress|null>(null);
   const load=useCallback(async()=>{
     if(!isTauri())return;
     const current=await invoke<Status>("update_status");
@@ -23,6 +26,16 @@ export default function Updates({
     catch(e){setMessage("Automatic check: "+errorText(e)+". If this repository is private, connect GitHub access below.")}
   },[]);
   useEffect(()=>{void load().catch(e=>onError(errorText(e)))},[load,onError]);
+  useEffect(()=>{
+    if(!isTauri())return;
+    let alive=true;
+    let unlisten:(()=>void)|undefined;
+    void listen<UpdateProgress>("noema-update-progress",(event)=>{
+      if(alive)setProgress(event.payload);
+    }).then(stop=>{if(alive)unlisten=stop;else stop()})
+      .catch(e=>{if(alive)onError(errorText(e))});
+    return ()=>{alive=false;unlisten?.()};
+  },[onError]);
   async function saveToken(){
     setBusy(true);setMessage("");
     try{
@@ -52,8 +65,9 @@ export default function Updates({
   }
   async function install(){
     if(!newVersion?.version)return;
-    if(!window.confirm("Install NOEMA "+newVersion.version+" now? NOEMA will save your writing, make a complete local backup, and close while Windows installs it. Open NOEMA again afterward."))return;
+    if(!window.confirm("Install NOEMA "+newVersion.version+" now? NOEMA will save your writing, back up your projects, install the update, and try to reopen automatically."))return;
     setBusy(true);
+    setProgress(null);
     try{
       await beforeInstall();
       setMessage("Downloading and verifying update, then backing up your writing. Keep NOEMA open until it closes itself.");
@@ -67,7 +81,7 @@ export default function Updates({
     <p>Installed version: <strong>{state?.installed??"Checking…"}</strong></p>
     <p><strong>Update from inside NOEMA.</strong> Check GitHub and choose Install. NOEMA will save the
       open manuscript, verify the archive, back up local projects and launch the Windows installer.
-      The existing installer flow closes NOEMA; reopen it afterward if it does not restart automatically.</p>
+      After installation, the updater will attempt to reopen NOEMA automatically. If Windows prevents this, open NOEMA normally.</p>
     <p>Check GitHub for a newer Windows build, download it inside NOEMA, verify the SHA-256 artifact digest,
       create a safety backup, then update after closing the editor. No browser download is needed once this updater is installed.</p>
     <div className="row"><button className="primary" onClick={()=>void check()} disabled={busy}>
@@ -104,6 +118,13 @@ export default function Updates({
         </button>
         {newVersion.url && <p className="micro">Build: {newVersion.url}</p>}
       </div> : newVersion && <p className="notice">You are using the newest successful Windows version available to this updater.</p>}
+    {progress&&<div className="notice" role="status" aria-live="polite">
+      <strong>{progress.stage}</strong>
+      {progress.total && progress.downloaded!==undefined ? <>
+        <progress aria-label="Update download progress" max={progress.total} value={progress.downloaded}/>
+        <span> {Math.min(100,Math.round((progress.downloaded/progress.total)*100))}% downloaded</span>
+      </> : null}
+    </div>}
     {message&&<p className="notice" role="status">{message}</p>}
     <p className="muted">Security limitation: this updater verifies GitHub Actions artifacts by SHA-256 (optionally authenticated).
       It does not yet verify a Tauri update-signing signature or Windows publisher certificate.
