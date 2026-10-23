@@ -334,7 +334,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
         </div>
         <div className="dialogue-header-actions">
           {selected&&!selected.id.startsWith("legacy-")&&<button
-            onClick={()=>{setEditTitle(selected.title);setEditGoal(selected.goal);setEditing(true)}}>Edit purpose</button>
+            onClick={()=>{setEditTitle(selected.title);setEditGoal(selected.goal);setEditing(true)}}>Edit purpose</button>}
           {selected&&<button type="button" className="dialogue-delete-button" disabled={busy}
             onClick={()=>void deleteDialogue()}>Delete dialogue</button>}
           <button aria-expanded={settings} aria-label="Choose AI model" onClick={()=>setSettings(v=>!v)}>⚙ Models</button>
