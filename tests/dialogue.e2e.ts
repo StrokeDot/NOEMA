@@ -42,6 +42,7 @@ test("book dialogue keeps separate conversation purposes and preserves them afte
   await page.getByRole("button",{name:"Delete dialogue"}).click();
   await expect(page.locator(".dialogue-thread")).toHaveCount(1);
   await expect(page.getByText("Recently deleted (1)")).toBeVisible();
+  await page.locator(".dialogue-trashed > summary").click();
   await page.locator(".dialogue-trashed").getByRole("button",{name:"Restore"}).click();
   await expect(page.locator(".dialogue-thread")).toHaveCount(2);
   await expect(page.locator(".dialogue-topline").getByRole("heading",{name:"Moral freedom"})).toBeVisible();
