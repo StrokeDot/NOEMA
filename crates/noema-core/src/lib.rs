@@ -492,22 +492,38 @@ impl Store {
                 let positions=rows(&self.conn,
                     "SELECT category,title,substr(body,1,2500) AS body FROM memories WHERE project_id=? AND category IN ('Established Positions','Writing Instructions') ORDER BY updated_at DESC LIMIT 30",
                     params![pid])?;
-                let source_rows=rows(&self.conn,
-                    "SELECT p.id,s.id AS source_id,s.name,s.role,s.source_origin,s.use_guidance,s.working_document,p.location,substr(p.text,1,2500) AS text FROM passages p JOIN sources s ON s.id=p.source_id WHERE p.project_id=? ORDER BY p.id DESC LIMIT 1500",
+                // FTS searches the whole project, not just its newest 1500 passages.
+                // This prevents early chapters and long research archives from disappearing
+                // from the assistant's usable evidence as the book grows.
+                let fts_query=terms.iter()
+                    .map(|term|format!("\\\"{}\\\"",term.replace('"',"\\\"\\\"")))
+                    .collect::<Vec<_>>().join(" OR ");
+                let ranked=if fts_query.is_empty() {json!([])} else {
+                    rows(&self.conn,
+                        "SELECT p.id,s.id AS source_id,s.name,s.role,s.source_origin,s.use_guidance,s.working_document,p.location,substr(p.text,1,2500) AS text FROM passage_fts JOIN passages p ON p.id=passage_fts.rowid JOIN sources s ON s.id=p.source_id WHERE passage_fts MATCH ? AND p.project_id=? ORDER BY rank LIMIT 80",
+                        params![fts_query,pid])?
+                };
+                // Include the current writing document even when the author's newest
+                // question doesn't repeat its keywords.
+                let working=rows(&self.conn,
+                    "SELECT p.id,s.id AS source_id,s.name,s.role,s.source_origin,s.use_guidance,s.working_document,p.location,substr(p.text,1,2500) AS text FROM passages p JOIN sources s ON s.id=p.source_id WHERE p.project_id=? AND s.working_document=1 ORDER BY p.id DESC LIMIT 2",
                     params![pid])?;
-                let mut ranked:Vec<(usize,Value)>=source_rows.as_array().unwrap().iter().filter_map(|v|{
-                    let txt=v["text"].as_str().unwrap_or("").to_lowercase();
-                    let label=v["name"].as_str().unwrap_or("").to_lowercase();
-                    let score=terms.iter().filter(|word|txt.contains(word.as_str())||label.contains(word.as_str())).count();
-                    if score>0 {Some((score,v.clone()))} else {None}
-                }).collect();
-                ranked.sort_by(|a,b|b.0.cmp(&a.0));
-                let working:Vec<Value>=source_rows.as_array().unwrap().iter()
-                    .filter(|v|v["working_document"]==1).take(5).cloned().collect();
-                let mut passages:Vec<Value>=working;
-                for (_,entry) in ranked.into_iter() {
+                let mut passages:Vec<Value>=working.as_array().unwrap().clone();
+                let ranked=ranked.as_array().unwrap();
+                // Relevant writer materials and opposing/reference materials each get
+                // an opportunity to appear; neither is treated as a confirmed belief.
+                for origin in ["Author","External"] {
+                    if let Some(entry)=ranked.iter().find(|entry|
+                        entry["source_origin"]==origin &&
+                        !passages.iter().any(|existing|existing["id"]==entry["id"])) {
+                        passages.push(entry.clone());
+                    }
+                }
+                for entry in ranked {
                     if passages.len()>=12{break;}
-                    if !passages.iter().any(|existing|existing["id"]==entry["id"]){passages.push(entry);}
+                    if !passages.iter().any(|existing|existing["id"]==entry["id"]){
+                        passages.push(entry.clone());
+                    }
                 }
                 let recent=rows(&self.conn,
                     "SELECT role,substr(content,1,12000) AS content FROM (SELECT role,content,created_at,id FROM project_chat_messages WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 14) ORDER BY created_at,id",
