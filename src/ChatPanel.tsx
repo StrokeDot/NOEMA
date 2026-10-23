@@ -42,6 +42,9 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const [editGoal,setEditGoal]=useState("");
   const [localModels,setLocalModels]=useState<LocalModel[]>([]);
   const [ollamaReady,setOllamaReady]=useState(false);
+  const [ollamaVersion,setOllamaVersion]=useState<string|null>(null);
+  const [pullError,setPullError]=useState("");
+  const [lastDownload,setLastDownload]=useState<string|null>(null);
   const [localNotice,setLocalNotice]=useState("");
   const [pulling,setPulling]=useState<string|null>(null);
   const [pullProgress,setPullProgress]=useState<PullProgress|null>(null);
@@ -103,11 +106,12 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const discoverModels=useCallback(async()=>{
     if(!isTauri())return;
     try{
-      const result=await invoke<{models:LocalModel[]}>("ai_local_models");
+      const result=await invoke<{models:LocalModel[];version?:string|null}>("ai_local_models");
       setLocalModels(result.models||[]);
+      setOllamaVersion(result.version||null);
       setOllamaReady(true);
       setLocalNotice(result.models.length+" installed Ollama model(s) detected.");
-    }catch(e){setLocalModels([]);setOllamaReady(false);setLocalNotice(errorText(e))}
+    }catch(e){setLocalModels([]);setOllamaReady(false);setOllamaVersion(null);setLocalNotice(errorText(e))}
   },[]);
   useEffect(()=>{if(settings&&provider==="ollama")void discoverModels()},[settings,provider,discoverModels]);
   useEffect(()=>{
@@ -127,14 +131,14 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
       return;
     }
     if(!window.confirm("Download "+name+" through your local Ollama service? This can use several GB of storage and internet data."))return;
-    setPulling(name);setPullProgress(null);setLocalNotice("Ollama is downloading "+name+"…");
+    setPulling(name);setLastDownload(name);setPullError("");setPullProgress(null);setLocalNotice("Ollama is downloading "+name+"…");
     try{
       const result=await invoke<{already_installed:boolean}>("ai_pull_model",{model:name});
       await discoverModels();
       setModel(old=>({...old,ollama:name}));
       localStorage.setItem("noema-ollama-model",name);
       setLocalNotice(result.already_installed ? "Already installed — reused existing model." : "Model installed and ready to use.");
-    }catch(e){setLocalNotice(errorText(e))}finally{setPulling(null);setPullProgress(null)}
+    }catch(e){setPullError(errorText(e));setLocalNotice("Download failed for "+name+". See details below.");}finally{setPulling(null)}
   }
   async function createDialogue(){
     const title=newTitle.trim(),goal=newGoal.trim();
@@ -317,23 +321,35 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
         {provider==="ollama"?<>
           <div className="dialogue-model-row"><strong>Available on this computer</strong>
             <button type="button" disabled={!!pulling} onClick={()=>void discoverModels()}>↻ Scan Ollama inventory</button></div>
-          <p className="muted" role="status">{localNotice||"Start Ollama and scan installed models. Alternative storage drives configured through OLLAMA_MODELS are supported."}</p>
+          <p className="muted" role="status">{localNotice||"Start Ollama and scan installed models. Alternative storage drives configured through OLLAMA_MODELS are supported."}
+          {ollamaReady&&<span> {ollamaVersion?"Ollama "+ollamaVersion+" detected.":"Ollama running (version not reported)."}</span>}</p>
           {localModels.length>0&&<div className="dialogue-installed-models">{localModels.map(m=><button key={m.name}
             onClick={()=>{setModel(old=>({...old,ollama:m.name}));localStorage.setItem("noema-ollama-model",m.name)}}>
             ● {m.name} {m.size?" · "+(m.size/1024**3).toFixed(1)+" GB":""}
             {models.ollama===m.name?" · selected":""}</button>)}</div>}
           <div className="dialogue-model-row"><strong>Discover and download</strong><small>No duplicate download of an already installed model</small></div>
           <div className="dialogue-model-catalog">{localChoices.map(model=><div key={model.id} className="dialogue-model-card">
-            <span>{model.label}</span>
+            <span>{model.label}<small className="dialogue-model-size"> · ~{model.id==="gpt-oss:20b"?"14":model.id==="gemma4:12b"?"8":model.id==="qwen3.5:9b"?"7":"9.3"} GB download</small></span>
             <button type="button" disabled={!ollamaReady||!!pulling} onClick={()=>void pullModel(model.id)}>
               {isInstalled(model.id,localModels)?"Use installed":pulling===model.id?"Downloading…":"Download"}
             </button>
           </div>)}</div>
-          {pulling&&<div className="dialogue-pull-status" role="status">
-            <strong>{pulling}</strong> · {pullProgress?.status||"Starting…"}
-            {pullProgress&&pullProgress.total>0&&<progress value={pullProgress.completed} max={pullProgress.total}/>}
-            {pullProgress&&pullProgress.total>0&&<small>{Math.round(100*pullProgress.completed/pullProgress.total)}%</small>}
-          </div>}
+          {(pulling||pullError)&&<div className="dialogue-pull-status" role={pullError?"alert":"status"}>
+            <strong>{pulling||lastDownload}</strong> · {pullError?"Download interrupted":pullProgress?.status||"Connecting to Ollama…"}
+            {!pullError&&pullProgress&&pullProgress.total>0&&<>
+              <progress aria-label="Current download layer progress" value={Math.min(pullProgress.completed,pullProgress.total)} max={pullProgress.total}/>
+              <small>Current layer: {Math.round(100*pullProgress.completed/pullProgress.total)}% (not overall model progress)</small>
+            </>}
+            {pullError&&<>
+              <p className="dialogue-download-error">{pullError}</p>
+              <p>Check free space on the model storage drive and your Ollama version. Retrying can reuse downloaded layers.</p>
+              <button type="button" disabled={!ollamaReady} onClick={()=>{if(lastDownload)void pullModel(lastDownload)}}>Retry {lastDownload}</button>
+            </>}
+          </div>
+          <details className="dialogue-model-help"><summary>Download not starting? Troubleshooting</summary>
+            <p>Ollama must be running and updated. GPT-OSS needs about 14 GB of disk space; Gemma 4 12B about 8 GB, plus temporary space. Downloads don't consume GPU VRAM.</p>
+            <p>Open <code>http://127.0.0.1:11434/api/tags</code> in your browser to check local inventory. For detailed network errors, the Ollama terminal can run <code>ollama pull gemma4:12b</code> or <code>ollama pull gpt-oss:20b</code>.</p>
+          </details>
           <small>Existing models registered with Ollama are reused regardless of Ollama's configured storage folder. Files elsewhere not yet registered with Ollama require an import workflow; NOEMA does not silently search private drives.</small>
         </>:<>
           <p>{configured?"OpenAI key is stored in Windows Credential Manager.":"Using an OpenAI API requires a separate billed API account; ChatGPT Plus is not shared."}</p>
