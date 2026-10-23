@@ -173,7 +173,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
       onError(errorText(e));
       setNotice("The original input may be saved as a pending turn even if the model failed. Nothing was added to your manuscript.");
     }finally{
-      try{await refresh()}catch(e){onError(errorText(e))}
+      try{await refresh();await loadDialogues()}catch(e){onError(errorText(e))}
       setBusy(false);
     }
   }
