@@ -41,6 +41,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const [editTitle,setEditTitle]=useState("");
   const [editGoal,setEditGoal]=useState("");
   const [localModels,setLocalModels]=useState<LocalModel[]>([]);
+  const [ollamaReady,setOllamaReady]=useState(false);
   const [localNotice,setLocalNotice]=useState("");
   const [pulling,setPulling]=useState<string|null>(null);
   const [pullProgress,setPullProgress]=useState<PullProgress|null>(null);
@@ -104,8 +105,9 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     try{
       const result=await invoke<{models:LocalModel[]}>("ai_local_models");
       setLocalModels(result.models||[]);
+      setOllamaReady(true);
       setLocalNotice(result.models.length+" installed Ollama model(s) detected.");
-    }catch(e){setLocalModels([]);setLocalNotice(errorText(e))}
+    }catch(e){setLocalModels([]);setOllamaReady(false);setLocalNotice(errorText(e))}
   },[]);
   useEffect(()=>{if(settings&&provider==="ollama")void discoverModels()},[settings,provider,discoverModels]);
   useEffect(()=>{
@@ -119,6 +121,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   },[]);
   async function pullModel(name:string){
     if(pulling)return;
+    if(!ollamaReady){setLocalNotice("Start Ollama, then scan installed models before downloading.");return;}
     if(isInstalled(name,localModels)){
       setModel(old=>({...old,ollama:name}));setLocalNotice(name+" is already installed — no download needed.");
       return;
@@ -314,7 +317,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
         {provider==="ollama"?<>
           <div className="dialogue-model-row"><strong>Available on this computer</strong>
             <button type="button" disabled={!!pulling} onClick={()=>void discoverModels()}>↻ Scan Ollama inventory</button></div>
-          <p className="muted">{localNotice||"NOEMA asks your running Ollama service about installed models, including models stored on another drive using OLLAMA_MODELS."}</p>
+          <p className="muted" role="status">{localNotice||"Start Ollama and scan installed models. Alternative storage drives configured through OLLAMA_MODELS are supported."}</p>
           {localModels.length>0&&<div className="dialogue-installed-models">{localModels.map(m=><button key={m.name}
             onClick={()=>{setModel(old=>({...old,ollama:m.name}));localStorage.setItem("noema-ollama-model",m.name)}}>
             ● {m.name} {m.size?" · "+(m.size/1024**3).toFixed(1)+" GB":""}
@@ -322,7 +325,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           <div className="dialogue-model-row"><strong>Discover and download</strong><small>No duplicate download of an already installed model</small></div>
           <div className="dialogue-model-catalog">{localChoices.map(model=><div key={model.id} className="dialogue-model-card">
             <span>{model.label}</span>
-            <button type="button" disabled={!!pulling} onClick={()=>void pullModel(model.id)}>
+            <button type="button" disabled={!ollamaReady||!!pulling} onClick={()=>void pullModel(model.id)}>
               {isInstalled(model.id,localModels)?"Use installed":pulling===model.id?"Downloading…":"Download"}
             </button>
           </div>)}</div>
