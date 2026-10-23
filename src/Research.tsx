@@ -273,7 +273,7 @@ export default function Research({
     return ()=>{live=false};
   },[project,refresh,onError]);
 
-  async function importFiles() {
+  async function importFiles(origin:"Author"|"External"="External") {
     try {
       const selected =
         import.meta.env.DEV && import.meta.env.VITE_NOEMA_TEST_BRIDGE === "1"
@@ -296,7 +296,7 @@ export default function Research({
       for (const path of paths) {
         setNote(`Importing ${++count} of ${paths.length}…`);
         try {
-          await request("import", { project_id: project, path });
+          await request("import", { project_id: project, path, origin });
         } catch (e) {
           failures.push(`${path.split(/[\\/]/).pop()}: ${errorText(e)}`);
         }
@@ -321,11 +321,28 @@ export default function Research({
           <h1>{conversations ? (script ? "Script conversations" : "Conversations") : (script ? "Script sources" : "Book sources")}</h1>
           <p>Keep the source. Find the idea. Build on what you know.</p>
         </div>
-        <button className="primary" disabled={busy} onClick={importFiles}>
+        <button className="primary" disabled={busy} onClick={()=>void importFiles("External")}>
           {busy ? "Attaching…" : "+ Attach source files"}
         </button>
       </div>
-      {!conversations && <section className="source-foundation" aria-label="Writing foundations">
+      {!conversations && <section className="source-foundation" aria-label="Two sources for this book">
+        <div className="eyebrow">THE TWO FOUNDATIONS OF THIS BOOK</div>
+        <div className="source-dual">
+          <article className="source-category">
+            <h2>1. My writing & mindset</h2>
+            <p>Your own essays, earlier drafts, conversations, notes and developing arguments.
+              NOEMA can use them to understand what you have written, but only author-confirmed
+              frameworks and writer-profile notes count as your established beliefs.</p>
+            <button disabled={busy} onClick={()=>void importFiles("Author")}>Upload my own sources</button>
+          </article>
+          <article className="source-category">
+            <h2>2. Books, studies & other authors</h2>
+            <p>External references that may support, challenge or inspire the book:
+              articles, research, statistics, novels and other writers' work.
+              Their claims remain attributed to their authors.</p>
+            <button disabled={busy} onClick={()=>void importFiles("External")}>Upload books & research</button>
+          </article>
+        </div>
         <div className="eyebrow">YOUR TWO KNOWLEDGE LAYERS</div>
         <h2>Author mindset + supporting material</h2>
         <p><strong>Author mindset:</strong> confirmed frameworks selected for this project. These guide your
@@ -397,11 +414,18 @@ export default function Research({
                     {new Date(s.created_at).toLocaleDateString()}{" "}
                     {s.tags && ` · ${s.tags}`}
                   </p>
+                  {!conversations && <small className="source-role">{s.source_origin==="Author"?"My source · not automatically confirmed":"External source · cite original author"}</small>}
                   {s.role && <small className="source-role">{s.role}</small>}
                   {!!s.working_document && <small className="source-role">Current working document</small>}
                   {s.use_guidance && <small>{s.use_guidance}</small>}
                   {s.warning && <small>{s.warning}</small>}
                 </div>
+                {!conversations && <button onClick={async()=>{
+                  const next=s.source_origin==="Author"?"External":"Author";
+                  if(!window.confirm("Move this file to "+(next==="Author"?"your own sources":"external research")+"? Original text and attribution history are preserved; this does not confirm any belief."))return;
+                  try{await request("source_origin",{project_id:project,id:s.id,origin:next});setRefresh(n=>n+1)}
+                  catch(e){onError(errorText(e))}
+                }}>{s.source_origin==="Author"?"Mark as external":"Mark as my source"}</button>}
                 {!conversations && <button onClick={async()=>{
                   try{
                     await request("set_working_document",{project_id:project,source_id:s.id,

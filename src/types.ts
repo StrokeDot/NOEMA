@@ -30,6 +30,7 @@ export type Source = {
   role?: "Supporting" | "Primary Reference" | "Critical Perspective" | "Background";
   use_guidance?: string;
   working_document?: number;
+  source_origin?: "Author" | "External";
   created_at: number;
   warning: string;
 };

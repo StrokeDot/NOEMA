@@ -708,6 +708,7 @@ export default function App() {
             const ps = await request<Project[]>("projects");
             setProjects(ps);
             await activate(ps.find((p) => p.id === added.id)!);
+            if(fields.project_type==="Book")setView("Research");
             setNewProject(false);
             setNewScriptChannel(null);
           }}
