@@ -25,9 +25,13 @@ async fn request(
             let prepared = noema_core::import::prepare(&root, std::path::Path::new(path))
                 .map_err(|e| e.to_string())?;
             let mut store = db.lock().map_err(|_| "Database lock unavailable")?;
-            store
-                .commit_import(pid, prepared)
-                .map_err(|e| e.to_string())
+            let imported=store.commit_import(pid, prepared).map_err(|e|e.to_string())?;
+            if let Some(origin)=args["origin"].as_str() {
+                store.request("source_origin",serde_json::json!({
+                    "project_id":pid,"id":imported["id"],"origin":origin
+                })).map_err(|e|e.to_string())?;
+            }
+            Ok(imported)
         } else {
             let mut store = db.lock().map_err(|_| "Database lock unavailable")?;
             store.request(&action, args).map_err(|e| e.to_string())
