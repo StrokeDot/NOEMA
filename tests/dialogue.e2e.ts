@@ -34,7 +34,9 @@ test("book dialogue keeps separate conversation purposes and preserves them afte
   await page.getByRole("button",{name:"Choose AI model"}).click();
   await expect(page.getByText("Available on this computer")).toBeVisible();
   await expect(page.getByText("Discover and download")).toBeVisible();
-  await expect(page.getByRole("button",{name:"Download"}).first()).toBeVisible();
+  // Offline Ollama must never present Download as an available action.
+  await expect(page.getByRole("button",{name:"Reconnect first"}).first()).toBeVisible();
+  await expect(page.getByRole("button",{name:"Reconnect first"}).first()).toBeDisabled();
   // Deleting a conversation must not delete a book. Trash permits recovery.
   await page.once("dialog",dialog=>void dialog.accept());
   await page.getByRole("button",{name:"Delete dialogue"}).click();
