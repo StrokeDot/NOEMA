@@ -60,6 +60,7 @@ fn skill_instructions(id:&str)->Result<&'static str,String> {
       "chapter-outline" => Ok("Chapter Architect: organize ideas into a coherent book chapter plan with subsections, transitions, and candidate lines, without claiming unfinished ideas are final."),
       "source-audit" => Ok("Source Auditor: identify every factual claim requiring a citation, quote only retrieved actual passages, and explicitly mark unavailable citations."),
       "profile-observation" => Ok("Writer Reflection: consider whether the writer explicitly reveals a stable preference or guiding principle, and propose evidence-linked profile observations cautiously, without diagnosing personality."),
+      "fiction-craft" => Ok("Fiction Craft: use external novels as references for abstract story principles—pacing, themes, world-building, character arcs, moral dilemmas—without copying protected expression, distinctive scenes, or specific characters. Compare against the author's intended themes, then challenge internal consistency, derivative plotting, weak motivations and missing consequences."),
       _ => Err("Unknown NOEMA writing skill".into())
     }
 }

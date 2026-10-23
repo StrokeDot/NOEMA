@@ -233,6 +233,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           <option value="argument-review">Argument reviewer</option>
           <option value="chapter-outline">Chapter architect</option>
           <option value="source-audit">Source and citation auditor</option>
+          <option value="fiction-craft">Fiction craft and story framework</option>
           <option value="profile-observation">Writer profile reflection</option>
         </select>
       </label>
