@@ -86,6 +86,8 @@ pub fn run() {
             ai_chat::ai_configure,
             ai_chat::ai_disconnect,
             ai_chat::ai_reply,
+            ai_chat::ai_local_models,
+            ai_chat::ai_pull_model,
         ])
         .run(tauri::generate_context!())
         .expect("Unable to start NOEMA; check your data-folder permissions");

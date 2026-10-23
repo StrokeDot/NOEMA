@@ -71,7 +71,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 11 {
+        if ver > 12 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -129,6 +129,11 @@ impl Store {
         if ver < 11 {
             let tx=conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v11_writer_profile_revisions.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 12 {
+            let tx=conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v12_book_dialogues.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -320,6 +325,31 @@ impl Store {
                     params![cid,pid,title,html,text,pid,now()])?;
                 Ok(json!({"id":cid}))
             }
+            "book_dialogues" => rows(&self.conn,
+                "SELECT c.id,c.project_id,c.title,c.goal,c.created_at,c.updated_at,(SELECT count(*) FROM writing_turns t WHERE t.conversation_id=c.id) AS exchange_count FROM writing_conversations c WHERE c.project_id=? ORDER BY c.updated_at DESC,c.id LIMIT 300",
+                params![required(&a,"project_id")?]),
+            "create_book_dialogue" => {
+                let pid=required(&a,"project_id")?;
+                let title=required(&a,"title")?.trim();
+                let goal=string(&a,"goal").trim();
+                if title.is_empty() || title.len()>180 || goal.len()>2000 {return Err("Dialogue title or goal is invalid".into());}
+                let did=id();
+                let changed=self.conn.execute("INSERT INTO writing_conversations(id,project_id,title,goal,created_at,updated_at) SELECT ?,?,?,?, ?,? WHERE EXISTS(SELECT 1 FROM projects WHERE id=?)",
+                    params![did,pid,title,goal,now(),now(),pid])?;
+                if changed!=1{return Err("Writing project not found".into());}
+                Ok(json!({"id":did,"title":title,"goal":goal}))
+            }
+            "edit_book_dialogue" => {
+                let pid=required(&a,"project_id")?;
+                let did=required(&a,"dialogue_id")?;
+                let title=required(&a,"title")?.trim();
+                let goal=string(&a,"goal").trim();
+                if title.is_empty() || title.len()>180 || goal.len()>2000 {return Err("Dialogue title or goal is invalid".into());}
+                let changed=self.conn.execute("UPDATE writing_conversations SET title=?,goal=?,updated_at=? WHERE id=? AND project_id=?",
+                    params![title,goal,now(),did,pid])?;
+                if changed!=1{return Err("Dialogue does not belong to this book".into());}
+                Ok(json!(true))
+            }
             "begin_writing_turn" => {
                 let pid=required(&a,"project_id")?;
                 let original=required(&a,"original_text")?;
@@ -327,9 +357,19 @@ impl Store {
                 let exists:i64=self.conn.query_row("SELECT count(*) FROM projects WHERE id=?",
                     params![pid],|r|r.get(0))?;
                 if exists!=1 {return Err("Writing project not found".into());}
+                let dialogue=string(&a,"dialogue_id");
+                if !dialogue.is_empty() {
+                    let belongs:i64=self.conn.query_row("SELECT count(*) FROM writing_conversations WHERE id=? AND project_id=?",
+                        params![dialogue,pid],|r|r.get(0))?;
+                    if belongs!=1 {return Err("Dialogue does not belong to this book".into());}
+                }
                 let tid=id();
-                self.conn.execute("INSERT INTO writing_turns(id,project_id,original_text,created_at,updated_at) VALUES(?,?,?,?,?)",
-                    params![tid,pid,original,now(),now()])?;
+                self.conn.execute("INSERT INTO writing_turns(id,project_id,original_text,conversation_id,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                    params![tid,pid,original,if dialogue.is_empty(){None}else{Some(dialogue)},now(),now()])?;
+                if !dialogue.is_empty(){
+                    self.conn.execute("UPDATE writing_conversations SET updated_at=? WHERE id=?",
+                        params![now(),dialogue])?;
+                }
                 Ok(json!({"id":tid}))
             }
             "complete_writing_turn" => {
@@ -380,8 +420,8 @@ impl Store {
                 Ok(json!({"explored":explored}))
             }
             "writing_turns" => rows(&self.conn,
-                "SELECT id,original_text,interpreted_text,interpretation_author_corrected,assistant_response,critical_review,critique_explored,provider,model,state,created_at FROM writing_turns WHERE project_id=? ORDER BY created_at,id LIMIT 500",
-                params![required(&a,"project_id")?]),
+                "SELECT id,conversation_id,original_text,interpreted_text,interpretation_author_corrected,assistant_response,critical_review,critique_explored,provider,model,state,created_at FROM writing_turns WHERE project_id=? AND (?='' OR conversation_id=?) ORDER BY created_at,id LIMIT 500",
+                params![required(&a,"project_id")?,string(&a,"dialogue_id"),string(&a,"dialogue_id")]),
             "correct_turn_meaning" => {
                 let pid=required(&a,"project_id")?;
                 let tid=required(&a,"turn_id")?;
@@ -516,6 +556,14 @@ impl Store {
             }
             "chat_context" => {
                 let pid=required(&a,"project_id")?;
+                let dialogue=string(&a,"dialogue_id");
+                let dialogue_meta=if dialogue.is_empty(){json!([])}else{
+                    rows(&self.conn,"SELECT id,title,goal FROM writing_conversations WHERE id=? AND project_id=?",
+                        params![dialogue,pid])?
+                };
+                if !dialogue.is_empty() && dialogue_meta.as_array().is_none_or(|arr|arr.is_empty()){
+                    return Err("Dialogue does not belong to this book".into());
+                }
                 let query=string(&a,"query");
                 let terms:Vec<String>=query.split(|ch:char| !ch.is_alphanumeric())
                     .filter(|word|word.chars().count()>=4)
@@ -564,17 +612,17 @@ impl Store {
                     }
                 }
                 let recent=rows(&self.conn,
-                    "SELECT role,substr(content,1,12000) AS content FROM (SELECT role,content,created_at,id FROM project_chat_messages WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 14) ORDER BY created_at,id",
-                    params![pid])?;
+                    "SELECT role,substr(content,1,12000) AS content FROM (SELECT role,content,created_at,id FROM project_chat_messages WHERE project_id=? AND ?='' ORDER BY created_at DESC,id DESC LIMIT 14) ORDER BY created_at,id",
+                    params![pid,dialogue])?;
                 let chapters=rows(&self.conn,
                     "SELECT id,title,substr(text,1,5000) AS text FROM chapters WHERE project_id=? AND deleted=0 ORDER BY updated_at DESC LIMIT 3",
                     params![pid])?;
                 let confirmed=rows(&self.conn,
                     "SELECT dimension,claim FROM writer_profile_notes WHERE state='Confirmed' ORDER BY updated_at DESC LIMIT 80",[])?;
                 let prior_turns=rows(&self.conn,
-                    "SELECT original_text,interpreted_text,assistant_response,critical_review,critique_explored FROM writing_turns WHERE project_id=? AND state='complete' ORDER BY created_at DESC,id DESC LIMIT 12",
-                    params![pid])?;
-                Ok(json!({"project":meta[0],"frameworks":frameworks,"established_positions":positions,"writer_profile":confirmed,"prior_turns":prior_turns,
+                    "SELECT original_text,interpreted_text,assistant_response,critical_review,critique_explored FROM writing_turns WHERE project_id=? AND (?='' OR conversation_id=?) AND state='complete' ORDER BY created_at DESC,id DESC LIMIT 12",
+                    params![pid,dialogue,dialogue])?;
+                Ok(json!({"project":meta[0],"dialogue":dialogue_meta.as_array().and_then(|arr|arr.first()).cloned(),"frameworks":frameworks,"established_positions":positions,"writer_profile":confirmed,"prior_turns":prior_turns,
                     "passages":passages,"recent_messages":recent,"recent_chapters":chapters}))
             }
             "set_working_document" => {
@@ -982,7 +1030,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":11}
+            "path":self.root.to_string_lossy(),"schema":12}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);

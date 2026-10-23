@@ -19,9 +19,10 @@ import ChannelsView from "./Channels";
 import type { ChannelProfile } from "./types";
 import type { GemDraft } from "./types";
 type View =
-  "Script Studio" | "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings" | "Updates" | "Writer Profile" | "Conversation Draft";
+  "Script Studio" | "Dialogue" | "Write" | "Research" | "Conversations" | "Memory" | "Frameworks" | "Channels" | "Gems" | "Preview" | "Settings" | "Updates" | "Writer Profile" | "Conversation Draft";
 const views: View[] = [
   "Script Studio",
+  "Dialogue",
   "Write",
   "Research",
   "Conversations",
@@ -35,7 +36,7 @@ const views: View[] = [
   "Updates",
   "Settings",
 ];
-const symbols = ["▦", "✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "♧", "☷", "⟳", "⚙"];
+const symbols = ["▦", "◉", "✎", "▤", "☷", "◇", "◈", "▣", "❖", "▥", "♧", "☷", "⟳", "⚙"];
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [channels, setChannels] = useState<ChannelProfile[]>([]);
@@ -54,7 +55,6 @@ export default function App() {
     () => window.matchMedia("(min-width: 1051px)").matches,
   );
   const [focus, setFocus] = useState(false);
-  const [chatOpen,setChatOpen] = useState(false);
   const [availableUpdate,setAvailableUpdate] = useState<string|null>(null);
   const [source, setSource] = useState<Source | null>(null);
   const [captureGem, setCaptureGem] = useState<Partial<GemDraft> | null>(null);
@@ -288,12 +288,12 @@ export default function App() {
   }
   const isScript = project?.project_type === "Video Script";
   const workspaceViews = isScript
-    ? views.filter(v => v !== "Write" && v !== "Preview")
+    ? views.filter(v => v !== "Write" && v !== "Preview" && v !== "Dialogue")
     : views.filter(v => v !== "Script Studio" && v !== "Channels");
   // Retain access to legacy freeform script material without presenting it as a book.
   if (isScript) workspaceViews.splice(1, 0, "Write", "Preview");
   const viewLabel = (v: View) => ({
-    "Script Studio": "Video script studio", Write: isScript ? "Freeform draft" : "Manuscript",
+    "Script Studio": "Video script studio", Dialogue: "Book dialogue", Write: isScript ? "Freeform draft" : "Manuscript",
     Research: isScript ? "Script sources" : "Book sources",
     Conversations: isScript ? "Script conversations" : "Conversations",
     Memory: isScript ? "Script memory" : "Project memory", Frameworks: "Core frameworks",
@@ -463,7 +463,7 @@ export default function App() {
           </>}
           <div className="nav-footer">
             <span className="local-dot" />
-            Local & private<span>Version 0.1.7</span>
+            Local & private<span>Version 0.1.9</span>
           </div>
         </aside>
       )}
@@ -489,10 +489,10 @@ export default function App() {
             {project && <button className="attach-source-button" title="Attach books and supporting sources to this writing project" onClick={()=>void attachWritingSources()}>
               + Attach sources
             </button>}
-            {project && <button aria-pressed={chatOpen}
-              title="Open the project writing chat alongside the manuscript"
-              onClick={()=>{setChatOpen(!chatOpen);if(!chatOpen)setResearch(false)}}>
-              {chatOpen?"Hide AI chat":"Open AI chat"}
+            {project && !isScript && <button aria-pressed={view==="Dialogue"}
+              title="Open a full-page book-writing conversation"
+              onClick={()=>changeView("Dialogue")}>
+              Open dialogue
             </button>}
             {project && <button title="Save a passage to Writing Gems" onClick={() => {
               const selected = window.getSelection()?.toString().trim() ?? "";
@@ -573,6 +573,21 @@ export default function App() {
                   </button>
                 </div>
               )
+            ) : view === "Dialogue" ? (
+              <ChatPanel key={project.id}
+                project={project}
+                activeChapter={doc}
+                onError={report}
+                onCreateChapter={createChatChapter}
+                onReplaceChapter={replaceChatChapter}
+                onGem={text=>{
+                  setCaptureGem({text,kind:"Reasoning",origin:"AI Assistant",status:"Candidate",
+                    chapter_id:doc?.id??null,source_label:"NOEMA book dialogue"});
+                  changeView("Gems");
+                }}
+                onAttach={async()=>attachWritingSources(false)}
+                onGoDraft={()=>changeView("Conversation Draft")}
+              />
             ) : view === "Research" || view === "Conversations" ? (
               <Research
                 script={!!isScript}
@@ -636,21 +651,7 @@ export default function App() {
               />
             )}
           </section>
-          {project && chatOpen && !focus && <ChatPanel key={project.id}
-            project={project}
-            activeChapter={view==="Write"?doc:null}
-            onError={report}
-            onCreateChapter={createChatChapter}
-            onReplaceChapter={replaceChatChapter}
-            onGem={text=>{
-              setCaptureGem({text,kind:"Reasoning",origin:"AI Assistant",status:"Candidate",
-                chapter_id:doc?.id??null,source_label:"NOEMA project chat"});
-              changeView("Gems");
-            }}
-            onAttach={async()=>attachWritingSources(false)}
-            onGoDraft={()=>changeView("Conversation Draft")}
-          />}
-          {project && research && !chatOpen && !focus && (
+          {project && research && view!=="Dialogue" && !focus && (
             <>
               <div
                 className="resize-handle"
