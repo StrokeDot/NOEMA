@@ -230,3 +230,13 @@ NOEMA 0.1.2–0.1.3 can discover newer builds but could fail to download the Git
 **Voice:** The Dictate button tries the operating webview's speech recognition when exposed. If unavailable, use Windows + H in the input field. Vendor speech recognition may use an external service. A bundled fully-offline whisper.cpp recorder/inference pipeline is a separate work item; this release does not pretend to provide it.
 
 **Compatibility:** Additive database migration v9, retaining all older books, media/script project records and source originals. A separate SCRIPTORIA migration will eventually remove the script UI from NOEMA safely.
+
+## NOEMA 0.1.6 — two book-source foundations, adversarial review, and in-app updates
+
+**Two book sources:** Each book now starts in Book Sources with **Upload my own sources** and **Upload books & research**. Original files stay local, separately attributed as Author or External. An uploaded personal note is not automatically a confirmed author belief; explicitly confirmed Writer Profile / Core Framework entries remain authoritative for personal preferences. External literature is reference evidence, for or against claims, or creative inspiration rather than text to copy.
+
+**Four-part exchange:** Original wording, AI interpretation, response from the author's confirmed framework, and a separate **critical review**. The assistant is instructed to steelman serious counterarguments instead of just agreeing. The writer may explore critiques in a follow-up and mark them considered; creating/replacing a chapter from an AI response is gated on acknowledging its critique. No review requires agreement.
+
+**In-app GitHub updates:** Updates now have their own navigation entry, an automatic startup check, and Check for updates / Install inside the app. The public StrokeDot/NOEMA GitHub Actions artifact endpoint can be queried without a private token where GitHub permits anonymous access. A private repo requires authorized GitHub access in NOEMA. A digest and local backup are checked before installation. No fully independent Tauri signature verification yet. GitHub Actions artifacts expire; long-term releases should move to signed GitHub Releases.
+
+**Bootstrap:** This is code in NOEMA 0.1.6. If the PC's installed version has no working updater, that running executable cannot acquire this code without one prior external install. If the previously installed authenticated updater works, version 0.1.6 can be installed through it, without downloading the installer manually. The native installation test does not prove an authenticated in-app GitHub network update on the writer's PC.

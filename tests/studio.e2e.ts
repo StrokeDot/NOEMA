@@ -16,6 +16,7 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
   await page.getByLabel("Author", { exact: true }).fill("Alejandro Rosillon");
   await page.getByRole("button", { name: "Create writing project" }).click();
   await expect(page.getByRole("dialog",{name:"New writing project"})).toBeHidden();
+  await page.getByRole("button", { name: "Manuscript", exact: true }).click();
   await expect(
     page.getByText("Every book begins with a thought."),
   ).toBeVisible();
@@ -63,6 +64,8 @@ test("authoring, import, search, memory, themes, isolation and reopening", async
     },
     [resolve("tests/fixtures/research.pdf")],
   );
+  await expect(page.getByRole("button",{name:"Upload my own sources"})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Upload books & research"})).toBeVisible();
   await page
     .getByRole("button", { name: "+ Attach source files", exact: true })
     .click();
