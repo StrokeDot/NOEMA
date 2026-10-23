@@ -116,11 +116,10 @@ export function Search({
         </div>
       )}
       <div className="ai-note">
-        <span className="badge">COMING LATER</span>
-        <h3>A companion for your ideas.</h3>
+        <h3>Your sources stay available to the writing assistant.</h3>
         <p>
-          AI is not connected in version 0.1. Your archive and writing work
-          entirely on this computer.
+          NOEMA can use relevant passages when you connect OpenAI API or local Ollama
+          in the writing conversation. Imported sources remain references, not instructions.
         </p>
       </div>
     </>
@@ -322,25 +321,25 @@ export default function Research({
           <p>Keep the source. Find the idea. Build on what you know.</p>
         </div>
         <button className="primary" disabled={busy} onClick={()=>void importFiles("External")}>
-          {busy ? "Attaching…" : "+ Attach source files"}
+          {busy ? "Attaching…" : "+ Add reference"}
         </button>
       </div>
       {!conversations && <section className="source-foundation" aria-label="Two sources for this book">
-        <div className="eyebrow">THE TWO FOUNDATIONS OF THIS BOOK</div>
+        <div className="eyebrow">THE TWO SOURCE LIBRARIES FOR THIS BOOK</div>
         <div className="source-dual">
           <article className="source-category">
-            <h2>1. My writing & mindset</h2>
+            <h2>Writer Sources</h2>
             <p>Your own essays, earlier drafts, conversations, notes and developing arguments.
               NOEMA can use them to understand what you have written, but only author-confirmed
               frameworks and writer-profile notes count as your established beliefs.</p>
-            <button disabled={busy} onClick={()=>void importFiles("Author")}>Upload my own sources</button>
+            <button disabled={busy} onClick={()=>void importFiles("Author")}>Upload Writer Sources</button>
           </article>
           <article className="source-category">
-            <h2>2. Books, studies & other authors</h2>
+            <h2>Reference Sources</h2>
             <p>External references that may support, challenge or inspire the book:
               articles, research, statistics, novels and other writers' work.
               Their claims remain attributed to their authors.</p>
-            <button disabled={busy} onClick={()=>void importFiles("External")}>Upload books & research</button>
+            <button disabled={busy} onClick={()=>void importFiles("External")}>Upload Reference Sources</button>
           </article>
         </div>
         <div className="eyebrow">YOUR TWO KNOWLEDGE LAYERS</div>
