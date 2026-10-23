@@ -181,6 +181,8 @@ test("a narrow window opens with an unobstructed writing workspace", async ({ pa
   await modal.getByRole("button", { name: "Create writing project" }).click();
   await expect(modal).toBeHidden();
   await expect(page.locator(".research-panel")).toHaveCount(0);
+  // A new book opens at its two-source onboarding; writing remains one click away.
+  await page.getByRole("button",{name:"Manuscript",exact:true}).click();
   page.once("dialog", d => d.accept("An accessible chapter"));
   await page.getByRole("button", { name: "Create a chapter", exact: true }).click();
   await page.locator("[contenteditable=true]").fill("Writing on a smaller screen.");
