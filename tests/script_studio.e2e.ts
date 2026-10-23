@@ -1,70 +1,54 @@
-import { test, expect } from "@playwright/test";
+import {test,expect} from "@playwright/test";
 
-test("video script scenes keep narration, visuals and timing after reopening", async ({page}) => {
-  const errors:string[] = [];
-  page.on("pageerror", e=>errors.push(e.message));
+test("NOEMA opens to its book library, hides YouTube controls, and preserves legacy scripts",async({page})=>{
+  const errors:string[]=[];
+  page.on("pageerror",e=>errors.push(e.message));
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "+ New writing project" })).toBeVisible();
-  const modal=page.getByRole("dialog",{name:"New writing project"});
-  if (!(await modal.isVisible())) await page.getByRole("button",{name:"+ New writing project"}).click();
-  await modal.getByRole("button", { name: "YouTube channel script", exact: false }).click();
-  await modal.getByLabel("New channel name").fill("The Truth Project");
-  await modal.getByRole("button",{name:"+ Create channel"}).click();
-  await expect(modal.getByLabel("Video script channel")).not.toHaveValue("");
-  await modal.getByLabel("Video script title").fill("Arthur Morgan redemption");
-  await modal.getByLabel("Author",{exact:true}).fill("Author");
-  await modal.getByRole("button",{name:"Create writing project"}).click();
-  await expect(modal).toBeHidden();
-  await expect(page.getByRole("button",{name:"Video script studio"})).toBeVisible();
-  await expect(page.getByRole("navigation", {name:"Workspace"}).getByRole("button", {name:"Book preview", exact:true})).toHaveCount(0);
-  await expect(page.getByRole("navigation", {name:"Workspace"}).getByRole("button", {name:"Manuscript", exact:true})).toHaveCount(0);
-  await expect(page.getByRole("button", {name:"Channel profiles", exact:true})).toBeVisible();
-  await page.getByRole("button",{name:"Create first scene"}).click();
-  await page.getByLabel("Scene / segment title").fill("Opening hook");
-  await page.getByLabel("Narration / voiceover").fill("Redemption begins with a choice.");
-  await page.getByLabel("Footage and visual directions").fill("Wide shot of Arthur near the bench.");
-  await page.getByLabel("Location / citation").fill("RDR2 scene notes at 00:42");
-  await page.getByLabel("Planned duration (seconds)").fill("42");
-  await page.getByLabel("Recording readiness").selectOption("Ready");
-  await expect(page.locator(".cue-header-actions [role=status]")).toHaveText("Saved on this computer");
-  await page.getByRole("button",{name:"+ Add scene"}).click();
-  await page.getByLabel("Scene / segment title").fill("Closing");
-  await page.getByLabel("Narration / voiceover").fill("He chose another ending.");
-  await page.getByRole("button",{name:"↑ Move up",exact:true}).click();
-  await expect(page.locator(".script-scene").first()).toContainText("Closing");
-  await page.getByRole("button",{name:"Production preview"}).click();
-  await expect(page.getByRole("dialog",{name:"Production script preview"})).toContainText("Redemption begins with a choice.");
-  await expect(page.getByRole("dialog",{name:"Production script preview"})).toContainText("Wide shot of Arthur");
-  await expect(page.getByRole("dialog",{name:"Production script preview"})).toContainText("00:42");
-  await page.getByRole("dialog",{name:"Production script preview"}).getByRole("button",{name:"Close"}).click();
+  await expect(page.getByRole("heading",{name:"Your books begin here."})).toBeVisible();
+  await expect(page.getByText("YouTube channels")).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"+ Create a book"})).toBeVisible();
+  // The storage core retains old Video Script projects for a later SCRIPTORIA migration.
+  // They must never appear as book cards or be deleted by the books-only UI.
+  const archived=await page.evaluate(async()=>{
+    const response=await fetch("http://127.0.0.1:4318/request",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"create_project",args:{
+        title:"Preserved video script",author:"Test author",project_type:"Video Script",
+        channel_id:"",description:"Keep this for SCRIPTORIA"
+      }})
+    });
+    if(!response.ok)throw new Error("Could not set up legacy-project test");
+    return response.json();
+  });
   await page.reload();
-  await expect(page.locator(".script-scene")).toHaveCount(2);
-  await expect(page.locator(".script-scene").first()).toContainText("Closing");
-  await page.locator(".script-scene").filter({hasText:"Opening hook"}).click();
-  await expect(page.getByLabel("Narration / voiceover")).toHaveValue("Redemption begins with a choice.");
-  await expect(page.getByLabel("Footage and visual directions")).toHaveValue("Wide shot of Arthur near the bench.");
-  await expect(page.getByLabel("Planned duration (seconds)")).toHaveValue("42");
-  await page.getByRole("button",{name:"Freeform draft",exact:true}).click();
-  await expect(page.getByText("Every script begins with a thought.")).toBeVisible();
-  await page.getByRole("button",{name:"Video script studio"}).click();
-  await expect(page.locator(".script-scene")).toHaveCount(2);
-  await page.getByRole("button", { name:"Books", exact:true }).click();
-  // If no book exists yet, the separate workspace opens a book-only setup.
-  const bookModal = page.getByRole("dialog", {name:"New writing project"});
-  if (await bookModal.isVisible()) {
-    await bookModal.getByLabel("Book title", {exact:true}).fill("Workspace separation book");
-    await bookModal.getByLabel("Author", {exact:true}).fill("Author");
-    await bookModal.getByRole("button", {name:"Create writing project"}).click();
-  }
-  await expect(page.getByRole("button", {name:"Manuscript", exact:true})).toBeVisible();
-  await expect(page.getByRole("button", {name:"Channel profiles", exact:true})).toHaveCount(0);
-  await expect(page.getByRole("button", {name:"Video script studio", exact:true})).toHaveCount(0);
-  await expect(page.getByLabel("Current project").locator("option").filter({hasText:"Arthur Morgan redemption"})).toHaveCount(0);
-  await page.getByRole("button", {name:"YouTube channels", exact:true}).click();
-  await expect(page.locator(".script-scene")).toHaveCount(2);
-  await expect(page.getByLabel("Current project").locator("option").filter({hasText:"Workspace separation book"})).toHaveCount(0);
-  await page.getByRole("button", {name:"Script gems",exact:true}).click();
-  await expect(page.getByLabel("Filter gems by draft section")).toBeVisible();
-  await expect(page.getByLabel("Filter gems by chapter")).toHaveCount(0);
+  await expect(page.getByRole("heading",{name:"Your books begin here."})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Open book: Preserved video script"})).toHaveCount(0);
+  await expect(page.getByText("1 older video-script project remains preserved")).toBeVisible();
+  const persisted=await page.evaluate(async()=>{
+    const response=await fetch("http://127.0.0.1:4318/request",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"projects",args:{}})
+    });
+    if(!response.ok)throw new Error("Could not read stored projects");
+    return response.json();
+  });
+  expect(persisted.some((p:{id:string;title:string})=>p.id===archived.id&&p.title==="Preserved video script")).toBe(true);
+  await page.getByRole("button",{name:"+ Create a book"}).click();
+  const modal=page.getByRole("dialog",{name:"New writing project"});
+  await expect(modal.getByText("Create a book project")).toBeVisible();
+  await expect(modal.getByText("YouTube channel script")).toHaveCount(0);
+  await modal.getByLabel("Book title").fill("The first book");
+  await modal.getByLabel("Author").fill("Test author");
+  await modal.getByRole("button",{name:"Create book →"}).click();
+  await expect(modal).toBeHidden();
+  await expect(page.getByRole("button",{name:"YouTube channels"})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"← All books"})).toBeVisible();
+  await page.getByRole("button",{name:"← All books"}).click();
+  await expect(page.getByRole("heading",{name:"Your books begin here."})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Open book: The first book"})).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading",{name:"Your books begin here."})).toBeVisible();
+  await page.getByRole("button",{name:"Open book: The first book"}).click();
+  await expect(page.getByLabel("Current project")).toHaveValue(/.+/);
   expect(errors).toEqual([]);
 });
