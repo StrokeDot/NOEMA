@@ -71,7 +71,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 12 {
+        if ver > 13 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -134,6 +134,11 @@ impl Store {
         if ver < 12 {
             let tx=conn.unchecked_transaction()?;
             tx.execute_batch(include_str!("migrations/v12_book_dialogues.sql"))?;
+            tx.commit()?;
+        }
+        if ver < 13 {
+            let tx=conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/v13_dialogue_trash.sql"))?;
             tx.commit()?;
         }
         Ok(Self { conn, root })
@@ -326,8 +331,31 @@ impl Store {
                 Ok(json!({"id":cid}))
             }
             "book_dialogues" => rows(&self.conn,
-                "SELECT c.id,c.project_id,c.title,c.goal,c.created_at,c.updated_at,(SELECT count(*) FROM writing_turns t WHERE t.conversation_id=c.id) AS exchange_count FROM writing_conversations c WHERE c.project_id=? ORDER BY c.updated_at DESC,c.id LIMIT 300",
+                "SELECT c.id,c.project_id,c.title,c.goal,c.created_at,c.updated_at,(SELECT count(*) FROM writing_turns t WHERE t.conversation_id=c.id) AS exchange_count FROM writing_conversations c WHERE c.project_id=? AND c.deleted_at=0 ORDER BY c.updated_at DESC,c.id LIMIT 300",
                 params![required(&a,"project_id")?]),
+            "trashed_book_dialogues" => rows(&self.conn,
+                "SELECT id,title,goal,updated_at,deleted_at FROM writing_conversations WHERE project_id=? AND deleted_at!=0 ORDER BY deleted_at DESC LIMIT 100",
+                params![required(&a,"project_id")?]),
+            "delete_book_dialogue" => {
+                let pid=required(&a,"project_id")?;
+                let did=required(&a,"dialogue_id")?;
+                // Never hard-delete referenced turns, source quotations or draft links.
+                // The author can restore an accidentally removed dialogue.
+                let count=self.conn.execute(
+                    "UPDATE writing_conversations SET deleted_at=?,updated_at=? WHERE id=? AND project_id=? AND deleted_at=0",
+                    params![now(),now(),did,pid])?;
+                if count!=1{return Err("Active dialogue not found in this book".into());}
+                Ok(json!({"deleted":true,"recoverable":true}))
+            }
+            "restore_book_dialogue" => {
+                let pid=required(&a,"project_id")?;
+                let did=required(&a,"dialogue_id")?;
+                let count=self.conn.execute(
+                    "UPDATE writing_conversations SET deleted_at=0,updated_at=? WHERE id=? AND project_id=? AND deleted_at!=0",
+                    params![now(),did,pid])?;
+                if count!=1{return Err("Deleted dialogue not found in this book".into());}
+                Ok(json!({"restored":true}))
+            }
             "create_book_dialogue" => {
                 let pid=required(&a,"project_id")?;
                 let title=required(&a,"title")?.trim();
@@ -345,7 +373,7 @@ impl Store {
                 let title=required(&a,"title")?.trim();
                 let goal=string(&a,"goal").trim();
                 if title.is_empty() || title.len()>180 || goal.len()>2000 {return Err("Dialogue title or goal is invalid".into());}
-                let changed=self.conn.execute("UPDATE writing_conversations SET title=?,goal=?,updated_at=? WHERE id=? AND project_id=?",
+                let changed=self.conn.execute("UPDATE writing_conversations SET title=?,goal=?,updated_at=? WHERE id=? AND project_id=? AND deleted_at=0",
                     params![title,goal,now(),did,pid])?;
                 if changed!=1{return Err("Dialogue does not belong to this book".into());}
                 Ok(json!(true))
@@ -359,7 +387,7 @@ impl Store {
                 if exists!=1 {return Err("Writing project not found".into());}
                 let dialogue=string(&a,"dialogue_id");
                 if !dialogue.is_empty() {
-                    let belongs:i64=self.conn.query_row("SELECT count(*) FROM writing_conversations WHERE id=? AND project_id=?",
+                    let belongs:i64=self.conn.query_row("SELECT count(*) FROM writing_conversations WHERE id=? AND project_id=? AND deleted_at=0",
                         params![dialogue,pid],|r|r.get(0))?;
                     if belongs!=1 {return Err("Dialogue does not belong to this book".into());}
                 }
@@ -420,7 +448,7 @@ impl Store {
                 Ok(json!({"explored":explored}))
             }
             "writing_turns" => rows(&self.conn,
-                "SELECT id,conversation_id,original_text,interpreted_text,interpretation_author_corrected,assistant_response,critical_review,critique_explored,provider,model,state,created_at FROM writing_turns WHERE project_id=? AND (?='' OR conversation_id=?) ORDER BY created_at,id LIMIT 500",
+                "SELECT id,conversation_id,original_text,interpreted_text,interpretation_author_corrected,assistant_response,critical_review,critique_explored,provider,model,state,created_at FROM writing_turns WHERE project_id=? AND (?='' OR conversation_id IN (SELECT id FROM writing_conversations WHERE id=? AND project_id=writing_turns.project_id AND deleted_at=0)) ORDER BY created_at,id LIMIT 500",
                 params![required(&a,"project_id")?,string(&a,"dialogue_id"),string(&a,"dialogue_id")]),
             "correct_turn_meaning" => {
                 let pid=required(&a,"project_id")?;
@@ -558,7 +586,7 @@ impl Store {
                 let pid=required(&a,"project_id")?;
                 let dialogue=string(&a,"dialogue_id");
                 let dialogue_meta=if dialogue.is_empty(){json!([])}else{
-                    rows(&self.conn,"SELECT id,title,goal FROM writing_conversations WHERE id=? AND project_id=?",
+                    rows(&self.conn,"SELECT id,title,goal FROM writing_conversations WHERE id=? AND project_id=? AND deleted_at=0",
                         params![dialogue,pid])?
                 };
                 if !dialogue.is_empty() && dialogue_meta.as_array().is_none_or(|arr|arr.is_empty()){
@@ -1030,7 +1058,7 @@ impl Store {
                 Ok(json!(true))
             }
             "storage" => Ok(json!({
-            "path":self.root.to_string_lossy(),"schema":12}
+            "path":self.root.to_string_lossy(),"schema":13}
             )),
             "backup" => {
                 let requested = PathBuf::from(required(&a, "path")?);
