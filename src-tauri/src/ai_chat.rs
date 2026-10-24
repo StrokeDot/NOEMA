@@ -8,14 +8,28 @@ use tauri::{AppHandle,Emitter,State};
 use std::time::Duration;
 
 const SECRET_SERVICE:&str="NOEMA-OpenAI-API";
+const ANTHROPIC_SERVICE:&str="NOEMA-Anthropic-API";
 const SECRET_USER:&str="api-key";
 fn entry()->Result<Entry,String> {
     Entry::new(SECRET_SERVICE,SECRET_USER).map_err(|_|"Credential storage is unavailable".into())
 }
+fn provider_entry(provider:&str)->Result<Entry,String>{
+    let service=match provider {
+        "openai"=>SECRET_SERVICE,
+        "anthropic"=>ANTHROPIC_SERVICE,
+        _=>return Err("Choose OpenAI or Anthropic".into())
+    };
+    Entry::new(service,SECRET_USER).map_err(|_|"Windows credential storage is unavailable".into())
+}
+fn has_key(provider:&str)->bool {
+    provider_entry(provider).ok().and_then(|e|e.get_password().ok()).is_some()
+}
 #[tauri::command]
 pub fn ai_status()->Value {
-    json!({"openai_key_saved":entry().ok().and_then(|e|e.get_password().ok()).is_some(),
+    json!({"openai_key_saved":has_key("openai"),
+           "anthropic_key_saved":has_key("anthropic"),
            "openai_provider":"OpenAI API (separate billing from ChatGPT)",
+           "anthropic_provider":"Anthropic Claude API (separate billing from Claude chat)",
            "ollama_provider":"Ollama local model (runs on your computer)"})
 }
 #[tauri::command]
@@ -32,6 +46,25 @@ pub fn ai_disconnect()->Result<Value,String> {
     let credential=entry()?;
     if credential.get_password().is_ok() { credential.delete_credential().map_err(|_|"Failed to delete stored AI key".to_string())?; }
     Ok(json!({"openai_key_saved":false}))
+}
+// Provider keys remain in separate Windows Credential Manager entries, never SQLite.
+#[tauri::command]
+pub fn ai_configure_provider(provider:String,api_key:String)->Result<Value,String>{
+    let key=api_key.trim();
+    if key.len()<25 || key.len()>2048 || key.chars().any(char::is_whitespace){
+        return Err("Enter a valid connection key from the provider's developer console.".into());
+    }
+    provider_entry(&provider)?.set_password(key)
+        .map_err(|_|"Could not securely save the connection key in Windows Credential Manager".to_string())?;
+    Ok(json!({"provider":provider,"connected":true}))
+}
+#[tauri::command]
+pub fn ai_disconnect_provider(provider:String)->Result<Value,String>{
+    let entry=provider_entry(&provider)?;
+    if entry.get_password().is_ok(){
+        entry.delete_credential().map_err(|_|"Could not remove the saved provider key".to_string())?;
+    }
+    Ok(json!({"provider":provider,"connected":false}))
 }
 fn chat_system(ctx:&Value)->String{
     format!(r#"You are NOEMA, a thoughtful book-writing collaborator. Return ONE valid JSON object, with exactly these top-level keys:
@@ -275,7 +308,7 @@ pub async fn ai_reply(
 )->Result<Value,String>{
     if message.trim().is_empty() || message.len()>100_000 {return Err("Enter a shorter message".into());}
     let model=validated_model(&model)?;
-    if provider!="openai" && provider!="ollama"{return Err("Choose OpenAI or local Ollama".into());}
+    if provider!="openai" && provider!="anthropic" && provider!="ollama"{return Err("Choose OpenAI, Anthropic Claude, or local Ollama".into());}
     // Persist original text immediately, before any model or network error.
     let (turn_id,ctx)={
         let mut store=db.lock().map_err(|_|"Cannot access project database".to_string())?;
@@ -313,6 +346,37 @@ pub async fn ai_reply(
         }
         body["choices"][0]["message"]["content"].as_str()
             .ok_or("OpenAI did not return a text reply")?.to_string()
+    }else if provider=="anthropic" {
+        let key=provider_entry("anthropic")?.get_password()
+            .map_err(|_|"Connect Claude in NOEMA first. A Claude chat subscription does not provide an API connection key.".to_string())?;
+        let anthropic_messages:Vec<Value>=messages.iter()
+            .filter(|m|m["role"]=="user" || m["role"]=="assistant").cloned().collect();
+        let response=client.post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key",key)
+            .header("anthropic-version","2023-06-01")
+            .json(&json!({
+                "model":model,
+                "max_tokens":4096,
+                "system":system,
+                "messages":anthropic_messages
+            }))
+            .send().await.map_err(|e|format!("Claude connection failed: {e}"))?;
+        let status=response.status();
+        let body:Value=response.json().await
+            .map_err(|_|"Claude returned an unreadable response".to_string())?;
+        if !status.is_success(){
+            return Err(format!("Claude API error ({status}): {}",
+                body["error"]["message"].as_str()
+                    .unwrap_or("Check the connection key, model access and API billing")));
+        }
+        let reply=body["content"].as_array()
+            .ok_or("Claude returned no content")?
+            .iter().filter(|part|part["type"]=="text")
+            .filter_map(|part|part["text"].as_str()).collect::<Vec<_>>().join("");
+        if reply.trim().is_empty(){
+            return Err("Claude did not return a text reply".into());
+        }
+        reply
     }else{
         let response=client.post("http://127.0.0.1:11434/api/chat")
             .json(&json!({"model":model,"stream":false,"messages":messages,

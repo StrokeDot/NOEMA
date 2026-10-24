@@ -1,6 +1,6 @@
 [package]
 name = "noema"
-version = "0.1.11"
+version = "0.1.12"
 description = "Where Thought Becomes Legacy"
 edition = "2021"
 [lib]

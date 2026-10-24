@@ -90,8 +90,8 @@ jobs:
         run: npm run tauri build
       - uses: actions/upload-artifact@v4
         with:
-          name: NOEMA-0.1.11-Windows-installer
-          path: src-tauri/target/release/bundle/nsis/NOEMA_0.1.11_x64-setup.exe
+          name: NOEMA-0.1.12-Windows-installer
+          path: src-tauri/target/release/bundle/nsis/NOEMA_0.1.12_x64-setup.exe
           if-no-files-found: error
       - name: Download previously verified 0.1.0 installer for upgrade testing
         uses: actions/download-artifact@v4
