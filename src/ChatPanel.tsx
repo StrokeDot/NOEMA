@@ -327,7 +327,6 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   }
   const selected=dialogues.find(item=>item.id===activeDialogue);
   const selectedDialogueForAction=selected;
-  const connected=provider==="ollama"?ollamaReady:configured[provider];
   return <section className="dialogue-workspace" aria-label="Book dialogue workspace">
     <aside className="dialogue-rail" aria-label="Book conversation topics">
       <div className="dialogue-rail-heading">
