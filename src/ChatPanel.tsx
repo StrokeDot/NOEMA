@@ -13,7 +13,9 @@ const isInstalled=(name:string,items:LocalModel[])=>{
   const canonical=(value:string)=>value.toLowerCase().replace(/:latest$/,"");
   return items.some(item=>canonical(item.name||item.model||"")===canonical(name));
 };
-type Status={openai_key_saved:boolean};
+type Status={openai_key_saved:boolean;anthropic_key_saved:boolean};
+type AiProvider="ollama"|"openai"|"anthropic";
+type WizardStep="source"|"provider"|"connect"|"details";
 type RecEvent={results:ArrayLike<{[n:number]:{transcript:string}}>};
 type SpeechEngine={lang:string;interimResults:boolean;onresult:((e:RecEvent)=>void)|null;
   onend:(()=>void)|null;onerror:((e:{error:string})=>void)|null;start:()=>void;stop:()=>void};
@@ -36,6 +38,8 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const [deletedDialogues,setDeletedDialogues]=useState<Dialogue[]>([]);
   const [activeDialogue,setActiveDialogue]=useState<string|null>(null);
   const [creating,setCreating]=useState(false);
+  const [wizardStep,setWizardStep]=useState<WizardStep>("source");
+  const [connectError,setConnectError]=useState("");
   const [newTitle,setNewTitle]=useState("");
   const [newGoal,setNewGoal]=useState("");
   const [editing,setEditing]=useState(false);
@@ -58,13 +62,16 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const [pullProgress,setPullProgress]=useState<PullProgress|null>(null);
   const historyRef=useRef<HTMLDivElement|null>(null);
   const [input,setInput]=useState("");
-  const [provider,setProvider]=useState<"openai"|"ollama">(
-    ()=>localStorage.getItem("noema-ai-provider")==="openai"?"openai":"ollama");
+  const [provider,setProvider]=useState<AiProvider>(()=> {
+    const saved=localStorage.getItem("noema-ai-provider");
+    return saved==="openai"||saved==="anthropic"?saved:"ollama";
+  });
   const [models,setModel]=useState({
     openai:localStorage.getItem("noema-openai-model")||"gpt-4.1-mini",
+    anthropic:localStorage.getItem("noema-anthropic-model")||"claude-sonnet-5-5",
     ollama:localStorage.getItem("noema-ollama-model")||"qwen3.5:9b",
   });
-  const [configured,setConfigured]=useState(false);
+  const [configured,setConfigured]=useState({openai:false,anthropic:false});
   const [key,setKey]=useState("");
   const [skill,setSkill]=useState("reflect");
   const [settings,setSettings]=useState(false);
@@ -112,7 +119,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   useEffect(()=>{
     let active=true;
     void refresh().catch(e=>{if(active)onError(errorText(e))});
-    if(isTauri())void invoke<Status>("ai_status").then(s=>{if(active)setConfigured(s.openai_key_saved)})
+    if(isTauri())void invoke<Status>("ai_status").then(s=>{if(active)setConfigured({openai:s.openai_key_saved,anthropic:!!s.anthropic_key_saved})})
       .catch(e=>{if(active)onError(errorText(e))});
     return()=>{active=false;speechRef.current?.stop()};
   },[refresh,onError]);
@@ -174,6 +181,15 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
       setLocalNotice(result.already_installed ? "Already installed — reused existing model." : "Model installed and ready to use.");
     }catch(e){setPullError(errorText(e));setLocalNotice("Download failed for "+name+". See details below.");}finally{setPulling(null)}
   }
+  function startNewDialogue(){
+    setEditing(false);setSettings(false);setCreating(true);setWizardStep("source");
+    setConnectError("");setKey("");
+  }
+  function chooseWizardProvider(p:AiProvider){
+    setProvider(p);setConnectError("");setKey("");
+    setWizardStep(p==="ollama" || configured[p]?"details":"connect");
+    if(p==="ollama")void discoverModels();
+  }
   async function createDialogue(){
     const title=newTitle.trim(),goal=newGoal.trim();
     if(!title||!goal)return;
@@ -214,14 +230,28 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     }catch(e){onError(errorText(e))}
   }
   async function connect(){
-    setBusy(true);
-    try{await invoke("ai_configure",{apiKey:key.trim()});setConfigured(true);setKey("");setSettings(false);
-      setNotice("API key saved in Windows Credential Manager.")}
-    catch(e){onError(errorText(e))}finally{setBusy(false)}
+    if(provider==="ollama")return;
+    setBusy(true);setConnectError("");
+    try{
+      await invoke("ai_configure_provider",{provider,apiKey:key.trim()});
+      setConfigured(old=>({...old,[provider]:true}));
+      setKey("");
+      setNotice((provider==="openai"?"OpenAI":"Claude")+" connection saved securely on this computer.");
+      if(creating&&wizardStep==="connect")setWizardStep("details");
+      else setSettings(false);
+    }catch(e){setConnectError(errorText(e))}finally{setBusy(false)}
+  }
+  async function disconnect(){
+    if(provider==="ollama")return;
+    try{
+      await invoke("ai_disconnect_provider",{provider});
+      setConfigured(old=>({...old,[provider]:false}));
+      setConnectError("");
+    }catch(e){setConnectError(errorText(e))}
   }
   async function send(text:string){
     if(busy||!text.trim())return;
-    if(!activeDialogue){setNotice("Create a dialogue with a subject and book goal first.");setCreating(true);return;}
+    if(!activeDialogue){setNotice("Choose your AI and create a dialogue first.");startNewDialogue();return;}
     setBusy(true);setNotice("Keeping your original wording and asking the selected AI…");
     setInput("");
     try{
@@ -297,11 +327,12 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   }
   const selected=dialogues.find(item=>item.id===activeDialogue);
   const selectedDialogueForAction=selected;
+  const connected=provider==="ollama"?ollamaReady:configured[provider];
   return <section className="dialogue-workspace" aria-label="Book dialogue workspace">
     <aside className="dialogue-rail" aria-label="Book conversation topics">
       <div className="dialogue-rail-heading">
         <span className="eyebrow">BOOK CONVERSATIONS</span>
-        <button className="primary" onClick={()=>{setCreating(true);setEditing(false)}}>+ New dialogue</button>
+        <button className="primary" onClick={startNewDialogue}>+ New dialogue</button>
       </div>
       <div className="dialogue-thread-list">
         {dialogues.map(item=><button key={item.id}
@@ -341,26 +372,86 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
         </div>
       </header>
       {(creating||editing)&&<div className="dialogue-goal-overlay">
-        <form className="dialogue-goal-form" onSubmit={e=>{e.preventDefault();void (editing?updateDialogue():createDialogue())}}>
-          <span className="eyebrow">{editing?"REFINE THE PURPOSE":"NEW BOOK CONVERSATION"}</span>
-          <h2>{editing?"What is this dialogue aiming to achieve?":"What should we explore together?"}</h2>
-          <label>Conversation subject
-            <input required maxLength={180} value={editing?editTitle:newTitle}
-              onChange={e=>editing?setEditTitle(e.target.value):setNewTitle(e.target.value)}
-              placeholder="Example: The meaning of individual responsibility"/>
-          </label>
-          <label>Purpose for the book
-            <textarea required maxLength={2000} rows={3} value={editing?editGoal:newGoal}
-              onChange={e=>editing?setEditGoal(e.target.value):setNewGoal(e.target.value)}
-              placeholder="What understanding, argument or chapter should this discussion help develop?"/>
-          </label>
-          <div className="dialogue-goal-actions">
-            <button type="button" onClick={()=>{setCreating(false);setEditing(false)}}>Cancel</button>
-            <button className="primary" disabled={!(editing?editTitle:newTitle).trim()||!(editing?editGoal:newGoal).trim()}>
-              {editing?"Save purpose":"Create dialogue"}
-            </button>
-          </div>
-        </form>
+        <div className="dialogue-wizard-frame" role="dialog" aria-modal="true" aria-label="Set up a book dialogue">
+          {creating&&wizardStep==="source"&&<div key="source" className="dialogue-wizard-step">
+            <span className="eyebrow">STEP 1 · YOUR WRITING PARTNER</span>
+            <h2>How would you like to write together?</h2>
+            <p>Start with your preferred AI connection. You can switch it at any time.</p>
+            <div className="dialogue-wizard-options">
+              <button className="dialogue-wizard-choice" type="button" onClick={()=>chooseWizardProvider("ollama")}>
+                <span className="dialogue-wizard-icon">⌘</span>
+                <strong>Local AI</strong>
+                <span>Use a model already installed on your computer through Ollama.</span>
+                <small>Private and available without cloud API charges</small>
+                <b>Choose local →</b>
+              </button>
+              <button className="dialogue-wizard-choice" type="button" onClick={()=>setWizardStep("provider")}>
+                <span className="dialogue-wizard-icon">☁</span>
+                <strong>Cloud AI</strong>
+                <span>Connect an online model from ChatGPT's maker or Claude's maker.</span>
+                <small>Requires a provider connection and separate API billing</small>
+                <b>Choose cloud →</b>
+              </button>
+            </div>
+            <div className="dialogue-wizard-bottom"><button onClick={()=>setCreating(false)}>Cancel</button></div>
+          </div>}
+          {creating&&wizardStep==="provider"&&<div key="provider" className="dialogue-wizard-step">
+            <span className="eyebrow">STEP 2 · CLOUD AI</span>
+            <h2>Who would you like to write with?</h2>
+            <p>These connect to the model providers. They don't use your chat-app subscription automatically.</p>
+            <div className="dialogue-wizard-options">
+              <button className="dialogue-wizard-choice" type="button" onClick={()=>chooseWizardProvider("openai")}>
+                <span className="dialogue-wizard-icon">◎</span><strong>ChatGPT · OpenAI</strong>
+                <span>Use OpenAI models to discuss, research and improve your manuscript.</span>
+                <small>{configured.openai?"Already connected":"Connection required"}</small><b>Continue →</b>
+              </button>
+              <button className="dialogue-wizard-choice" type="button" onClick={()=>chooseWizardProvider("anthropic")}>
+                <span className="dialogue-wizard-icon">✳</span><strong>Claude · Anthropic</strong>
+                <span>Use Claude models for literary writing, development and critique.</span>
+                <small>{configured.anthropic?"Already connected":"Connection required"}</small><b>Continue →</b>
+              </button>
+            </div>
+            <div className="dialogue-wizard-bottom"><button onClick={()=>setWizardStep("source")}>← Back</button><button onClick={()=>setCreating(false)}>Cancel</button></div>
+          </div>}
+          {creating&&wizardStep==="connect"&&<form key="connect" className="dialogue-wizard-step" onSubmit={e=>{e.preventDefault();void connect()}}>
+            <span className="eyebrow">STEP 3 · PRIVATE CONNECTION</span>
+            <h2>Connect {provider==="openai"?"ChatGPT models":"Claude models"}</h2>
+            <p>NOEMA needs a private connection key from the {provider==="openai"?"OpenAI":"Anthropic"} developer platform. A normal chat subscription is not the same as API access.</p>
+            <label>Provider connection key
+              <input autoComplete="off" type="password" value={key} onChange={e=>setKey(e.target.value)}
+                placeholder="Paste your connection key here" aria-label="Provider connection key"/>
+            </label>
+            <small>Your key is stored in Windows Credential Manager, not inside your manuscript or chat history.</small>
+            {connectError&&<p className="dialogue-connect-error" role="alert">{connectError}</p>}
+            <div className="dialogue-wizard-bottom">
+              <button type="button" onClick={()=>{setKey("");setWizardStep("provider")}}>← Back</button>
+              <button className="primary" disabled={busy||key.trim().length<25}>Save connection & continue →</button>
+            </div>
+            <p className="dialogue-wizard-help">Need a key? Visit the {provider==="openai"?"OpenAI API platform":"Anthropic Console"} and create an API key. Provider API charges are separate from your chat subscription.</p>
+          </form>}
+          {(editing||(creating&&wizardStep==="details"))&&<form key="details" className="dialogue-goal-form dialogue-wizard-step" onSubmit={e=>{e.preventDefault();void (editing?updateDialogue():createDialogue())}}>
+            <span className="eyebrow">{editing?"REFINE THE PURPOSE":"YOUR BOOK'S NEXT CONVERSATION"}</span>
+            <h2>{editing?"What is this dialogue aiming to achieve?":"What should we explore together?"}</h2>
+            {!editing&&<p className="dialogue-wizard-selection">Writing with {provider==="ollama"?"Local AI · Ollama":provider==="openai"?"ChatGPT models · OpenAI":"Claude models · Anthropic"}
+              <button type="button" onClick={()=>setWizardStep("source")}>Change</button></p>}
+            <label>Conversation subject
+              <input required maxLength={180} value={editing?editTitle:newTitle}
+                onChange={e=>editing?setEditTitle(e.target.value):setNewTitle(e.target.value)}
+                placeholder="Example: The meaning of individual responsibility"/>
+            </label>
+            <label>Purpose for the book
+              <textarea required maxLength={2000} rows={3} value={editing?editGoal:newGoal}
+                onChange={e=>editing?setEditGoal(e.target.value):setNewGoal(e.target.value)}
+                placeholder="What understanding, argument or chapter should this discussion help develop?"/>
+            </label>
+            <div className="dialogue-goal-actions">
+              <button type="button" onClick={()=>{setCreating(false);setEditing(false)}}>Cancel</button>
+              <button className="primary" disabled={!(editing?editTitle:newTitle).trim()||!(editing?editGoal:newGoal).trim()}>
+                {editing?"Save purpose":"Create dialogue"}
+              </button>
+            </div>
+          </form>}
+        </div>
       </div>}
       {settings&&<section className="dialogue-model-drawer" aria-label="AI model manager">
         <div className="dialogue-model-heading">
@@ -370,14 +461,20 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
         <div className="dialogue-model-grid">
           <label>Provider<select value={provider} onChange={e=>setProvider(e.target.value as typeof provider)}>
             <option value="ollama">Local models · Ollama</option>
-            <option value="openai">OpenAI API · separate billing</option>
+            <option value="openai">ChatGPT models · OpenAI API</option>
+            <option value="anthropic">Claude models · Anthropic API</option>
           </select></label>
           <label>Model<select aria-label="Selected AI model" value={models[provider]} onChange={e=>{
             const name=e.target.value;setModel(old=>({...old,[provider]:name}));
             localStorage.setItem("noema-"+provider+"-model",name);
           }}>
             {provider==="openai"?<><option value="gpt-4.1-mini">gpt-4.1-mini</option>
-              <option value={models.openai}>{models.openai}</option></>:
+              {models.openai!=="gpt-4.1-mini"&&<option value={models.openai}>{models.openai}</option>}</>:
+            provider==="anthropic"?<>
+              <option value="claude-sonnet-5-5">Claude Sonnet 5.5</option>
+              <option value="claude-haiku-5-5">Claude Haiku 5.5</option>
+              {models.anthropic!=="claude-sonnet-5-5"&&models.anthropic!=="claude-haiku-5-5"&&<option value={models.anthropic}>{models.anthropic}</option>}
+            </>:
               <>{(!ollamaReady||!isInstalled(models.ollama,localModels))&&<option value={models.ollama}>{models.ollama} · {ollamaReady?"not installed":"connection offline"}</option>}
                 {localModels.map(m=><option key={m.name} value={m.name}>{m.name} · {ollamaReady?"installed":"previously detected"}</option>)}</>}
           </select></label>
@@ -418,10 +515,14 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           </details>
           <small>Existing models registered with Ollama are reused regardless of Ollama's configured storage folder. Files elsewhere not yet registered with Ollama require an import workflow; NOEMA does not silently search private drives.</small>
         </>:<>
-          <p>{configured?"OpenAI key is stored in Windows Credential Manager.":"Using an OpenAI API requires a separate billed API account; ChatGPT Plus is not shared."}</p>
-          <label>OpenAI API key<input type="password" autoComplete="off" value={key} onChange={e=>setKey(e.target.value)} placeholder="API key"/></label>
-          <button disabled={busy||key.trim().length<25} onClick={()=>void connect()}>Save API key</button>
-          {configured&&<button disabled={busy} onClick={()=>void invoke("ai_disconnect").then(()=>setConfigured(false)).catch(e=>onError(errorText(e)))}>Forget API key</button>}
+          <p>{configured[provider]?"Your provider connection is securely saved on this computer.":"Connect through the provider's developer API. Chat subscriptions do not automatically enable this connection."}</p>
+          <label>Provider connection key<input type="password" autoComplete="off" value={key} onChange={e=>setKey(e.target.value)} placeholder="Paste your connection key"/></label>
+          <div className="dialogue-model-row">
+            <button disabled={busy||key.trim().length<25} onClick={()=>void connect()}>Save connection</button>
+            {configured[provider]&&<button disabled={busy} onClick={()=>void disconnect()}>Disconnect {provider==="openai"?"OpenAI":"Claude"}</button>}
+          </div>
+          {connectError&&<p className="dialogue-connect-error" role="alert">{connectError}</p>}
+          <small>Keys are kept in Windows Credential Manager. Provider API usage may have separate charges.</small>
         </>}
       </section>}
       <div ref={historyRef} className="ai-chat-history dialogue-transcript" role="log" aria-label="Book conversation history">
@@ -429,7 +530,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           <span className="dialogue-welcome-symbol">◎</span>
           <h1>What shall we think through?</h1>
           <p>You lead with a subject and purpose. The AI responds, questions assumptions, considers evidence and helps develop your book.</p>
-          <button className="primary" onClick={()=>setCreating(true)}>Begin a dialogue</button>
+          <button className="primary" onClick={startNewDialogue}>Begin a dialogue</button>
         </div>}
         {selected&&turns.length===0&&legacy.length===0&&<div className="dialogue-welcome">
           <span className="dialogue-welcome-symbol">◎</span>
@@ -512,7 +613,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
               <select value={speechLanguage} aria-label="Speech recognition language" onChange={e=>setSpeechLanguage(e.target.value)}>
                 <option value="en-US">EN</option><option value="es-ES">ES</option></select>
               <button type="submit" className="primary" aria-label="Send message"
-                disabled={busy||!selected||!input.trim()||(provider==="openai"&&!configured)}>
+                disabled={busy||!selected||!input.trim()||(provider!=="ollama"&&!configured[provider])}>
                 {busy?"Thinking…":"Send ↑"}</button>
             </div>
           </div>
