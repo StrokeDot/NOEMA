@@ -426,7 +426,13 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
               <button type="button" onClick={()=>{setKey("");setWizardStep("provider")}}>← Back</button>
               <button className="primary" disabled={busy||key.trim().length<25}>Save connection & continue →</button>
             </div>
-            <p className="dialogue-wizard-help">Need a key? Visit the {provider==="openai"?"OpenAI API platform":"Anthropic Console"} and create an API key. Provider API charges are separate from your chat subscription.</p>
+            <div className="dialogue-wizard-help">
+              <button type="button" onClick={()=>{if(isTauri())void invoke("open_ai_provider_setup",{provider}).catch(e=>setConnectError(errorText(e)));
+                else window.open(provider==="openai"?"https://platform.openai.com/api-keys":"https://console.anthropic.com/settings/keys","_blank","noopener,noreferrer")}}>
+                Open {provider==="openai"?"OpenAI":"Anthropic"} connection setup ↗
+              </button>
+              <p>This opens the provider's official website. After signing in there, create a connection key and paste it above. API charges are separate from your chat subscription.</p>
+            </div>
           </form>}
           {(editing||(creating&&wizardStep==="details"))&&<form key="details" className="dialogue-goal-form dialogue-wizard-step" onSubmit={e=>{e.preventDefault();void (editing?updateDialogue():createDialogue())}}>
             <span className="eyebrow">{editing?"REFINE THE PURPOSE":"YOUR BOOK'S NEXT CONVERSATION"}</span>
