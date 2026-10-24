@@ -136,10 +136,10 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
       setOllamaReady(true);
       setLocalNotice(installed.length+" Ollama models found on this computer.");
     }catch(e){
-      // A disconnected service cannot establish which model files exist.
-      // Keep the last known inventory without claiming any files were deleted.
+      // A failed API request does not prove the Ollama app stopped, or models disappeared.
       setOllamaReady(false);setOllamaVersion(null);
-      setLocalNotice("Ollama is offline. Your downloaded models have NOT been checked or deleted. Start Ollama to reconnect.");
+      setLocalNotice("NOEMA couldn't reach Ollama's model API: "+errorText(e)+
+        " Previously downloaded model files have not been altered. Check whether Ollama responds at its local API address.");
     }finally{setOllamaChecking(false)}
   },[]);
   async function startOllama(){
@@ -151,7 +151,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
       await discoverModels();
     }catch(e){
       setOllamaReady(false);
-      setLocalNotice("Couldn't start the Ollama service: "+errorText(e));
+      setLocalNotice("Could not connect to the Ollama API: "+errorText(e));
     }finally{setOllamaStarting(false)}
   }
   useEffect(()=>{if(settings&&provider==="ollama")void discoverModels()},[settings,provider,discoverModels]);
