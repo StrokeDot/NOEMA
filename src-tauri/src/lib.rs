@@ -65,6 +65,26 @@ fn open_github_token_setup() -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     Err("Private GitHub updater setup is currently supported on Windows.".into())
 }
+// Safe help action: only two pre-approved official provider URLs can open.
+#[tauri::command]
+fn open_ai_provider_setup(provider:String)->Result<(),String>{
+    let url=match provider.as_str(){
+        "openai"=>"https://platform.openai.com/api-keys",
+        "anthropic"=>"https://console.anthropic.com/settings/keys",
+        _=>return Err("Unknown AI provider".into())
+    };
+    #[cfg(target_os="windows")]
+    {
+        std::process::Command::new("explorer.exe").arg(url).spawn()
+            .map_err(|_|"Could not open the provider's website".to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os="windows"))]
+    {
+        let _=url;
+        Err("Open the provider's developer console in your browser".into())
+    }
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -87,6 +107,7 @@ pub fn run() {
             ai_chat::ai_disconnect,
             ai_chat::ai_configure_provider,
             ai_chat::ai_disconnect_provider,
+            open_ai_provider_setup,
             ai_chat::ai_reply,
             ai_chat::ai_local_models,
             ai_chat::ai_start_ollama,
