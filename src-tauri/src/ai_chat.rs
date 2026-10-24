@@ -135,11 +135,66 @@ fn validated_model(raw:&str)->Result<&str,String>{
     }
     Ok(raw)
 }
+// All Ollama traffic stays on loopback and explicitly bypasses HTTP proxy
+// environment settings. A running GUI is not proof that the API socket is live.
+const DEFAULT_OLLAMA_URL:&str="http://127.0.0.1:11434";
+fn parsed_local_ollama_host(input:&str)->Option<String>{
+    let value=input.trim();
+    if value.is_empty() { return None; }
+    let expanded=if value.starts_with("http://"){value.to_string()}
+        else if value.contains("://"){return None}
+        else {format!("http://{value}")};
+    let u=reqwest::Url::parse(&expanded).ok()?;
+    if u.scheme()!="http" || !u.username().is_empty() || u.password().is_some()
+        || u.query().is_some() || u.fragment().is_some() || u.path()!="/" {
+        return None;
+    }
+    let host=match u.host_str()? {
+        "127.0.0.1"|"localhost"|"0.0.0.0" => "127.0.0.1",
+        "::1"|"[::1]"|"::"|"[::]" => "127.0.0.1",
+        _=>return None,
+    };
+    let port=u.port().unwrap_or(11434);
+    Some(format!("http://{host}:{port}"))
+}
+fn ollama_url()->String{
+    std::env::var("OLLAMA_HOST").ok()
+        .and_then(|v|parsed_local_ollama_host(&v))
+        .unwrap_or_else(||DEFAULT_OLLAMA_URL.to_string())
+}
+fn local_ollama_client(timeout:Duration)->Result<Client,String>{
+    Client::builder()
+        .no_proxy()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(timeout)
+        .build().map_err(|e|format!("Cannot initialize Ollama connection: {e}"))
+}
+#[cfg(test)]
+mod ollama_connect_tests {
+    use super::*;
+    #[test]
+    fn allows_only_local_ollama_addresses(){
+        assert_eq!(parsed_local_ollama_host("127.0.0.1:11434").as_deref(),
+            Some("http://127.0.0.1:11434"));
+        assert_eq!(parsed_local_ollama_host("localhost:11666").as_deref(),
+            Some("http://127.0.0.1:11666"));
+        assert_eq!(parsed_local_ollama_host("0.0.0.0:11777").as_deref(),
+            Some("http://127.0.0.1:11777"));
+        assert_eq!(parsed_local_ollama_host("http://[::1]:11434").as_deref(),
+            Some("http://127.0.0.1:11434"));
+        for host in ["https://127.0.0.1:11434", "http://example.com:11434",
+          "http://192.168.1.8:11434","http://127.0.0.1:11434/admin",
+          "http://person@127.0.0.1:11434","file:///tmp"] {
+            assert_eq!(parsed_local_ollama_host(host),None,"{host} must not be accepted");
+        }
+    }
+}
 // Ask the running Ollama service; it knows its configured model location even
 // when OLLAMA_MODELS points to another disk. Do not scan private user drives.
 async fn installed_ollama_models(client:&Client)->Result<Vec<Value>,String>{
-    let response=client.get("http://127.0.0.1:11434/api/tags").send().await
-        .map_err(|_|"Ollama isn't running. Start Ollama to find local models.".to_string())?;
+    let endpoint=format!("{}/api/tags",ollama_url());
+    let response=client.get(&endpoint).send().await
+        .map_err(|e|format!("Ollama app may be running, but its API at {endpoint} could not be reached: {e}. Check Ollama's server status or OLLAMA_HOST setting."))?;
     if !response.status().is_success(){return Err(format!("Ollama model query failed ({})",response.status()));}
     let body:Value=response.json().await.map_err(|_|"Ollama returned unreadable model information".to_string())?;
     Ok(body["models"].as_array().cloned().unwrap_or_default())
@@ -195,20 +250,19 @@ mod pull_parser_tests {
 }
 #[tauri::command]
 pub async fn ai_local_models()->Result<Value,String>{
-    let client=Client::builder().timeout(Duration::from_secs(12)).build().map_err(|e|e.to_string())?;
+    let client=local_ollama_client(Duration::from_secs(12))?;
     let models=installed_ollama_models(&client).await?;
-    let version=match client.get("http://127.0.0.1:11434/api/version").send().await {
+    let version=match client.get(format!("{}/api/version",ollama_url())).send().await {
         Ok(r)=>r.json::<Value>().await.ok().and_then(|v|v["version"].as_str().map(str::to_string)),
         Err(_)=>None
     };
-    Ok(json!({"models":models,"version":version,"service":"Ollama","storage":"Ollama's configured model directory"}))
+    Ok(json!({"models":models,"version":version,"service":"Ollama","endpoint":ollama_url(),"storage":"Ollama's configured model directory"}))
 }
 // Launch the existing Ollama installation only after an explicit user click.
 // No automatic model download, installation or filesystem crawling.
 #[tauri::command]
 pub async fn ai_start_ollama()->Result<Value,String>{
-    let client=Client::builder().timeout(Duration::from_secs(3)).build()
-        .map_err(|e|e.to_string())?;
+    let client=local_ollama_client(Duration::from_secs(3))?;
     if installed_ollama_models(&client).await.is_ok(){
         return Ok(json!({"running":true,"started":false}));
     }
@@ -238,7 +292,7 @@ pub async fn ai_start_ollama()->Result<Value,String>{
                 return Ok(json!({"running":true,"started":true}));
             }
         }
-        return Err("Ollama was launched, but its local server at 127.0.0.1:11434 did not respond. Check the Ollama taskbar icon or its server.log, then try Scan inventory.".into());
+        return Err(format!("Ollama's window was launched, but NOEMA cannot contact its API at {}. Running the app does not guarantee the API is listening. Check the Ollama server log and configured OLLAMA_HOST; test the URL in PowerShell.",ollama_url()));
     }
     #[cfg(not(target_os="windows"))]
     Err("Launch the Ollama application, then scan for installed models.".into())
@@ -246,10 +300,7 @@ pub async fn ai_start_ollama()->Result<Value,String>{
 #[tauri::command]
 pub async fn ai_pull_model(app:AppHandle,model:String)->Result<Value,String>{
     let model=validated_model(&model)?.to_string();
-    let client=Client::builder()
-        .connect_timeout(Duration::from_secs(25))
-        .timeout(Duration::from_secs(60*60*6))
-        .build().map_err(|e|e.to_string())?;
+    let client=local_ollama_client(Duration::from_secs(60*60*6))?;
     let installed=installed_ollama_models(&client).await?;
     if installed.iter().any(|item|{
         item["name"].as_str().or_else(||item["model"].as_str())
@@ -257,7 +308,7 @@ pub async fn ai_pull_model(app:AppHandle,model:String)->Result<Value,String>{
     }){
         return Ok(json!({"model":model,"already_installed":true}));
     }
-    let mut response=client.post("http://127.0.0.1:11434/api/pull")
+    let mut response=client.post(format!("{}/api/pull",ollama_url()))
         .json(&json!({"name":model,"stream":true})).send().await
         .map_err(|e|format!("Ollama download could not start: {e}"))?;
     if !response.status().is_success(){
@@ -378,7 +429,8 @@ pub async fn ai_reply(
         }
         reply
     }else{
-        let response=client.post("http://127.0.0.1:11434/api/chat")
+        let local_client=local_ollama_client(Duration::from_secs(240))?;
+        let response=local_client.post(format!("{}/api/chat",ollama_url()))
             .json(&json!({"model":model,"stream":false,"messages":messages,
                 "format":response_schema(),"options":{"num_predict":3000,"num_ctx":8192}}))
             .send().await.map_err(|e|format!("Ollama is not responding locally. Start Ollama and pull the model. {e}"))?;
