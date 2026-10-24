@@ -256,3 +256,12 @@ For writing arguments, the AI context also now includes earlier critical reviews
 - **Two project libraries:** book onboarding has explicitly named **Writer Sources** and **Reference Sources** upload buttons, sharing the same established local import system.
 
 **Update limitation:** this GitHub Actions artifact updater validates the archive against GitHub's SHA-256 digest but does not yet independently authenticate a publisher's signature. The installer remains unsigned. A 0.1.7 (or earlier) app without a functioning updater requires a one-time bootstrap installation; an older binary cannot add update logic to itself. Thereafter the supported flow is **NOEMA → Updates → Install**, with no manual ZIP or installer download. Always retain your project backups.
+
+
+## NOEMA 0.1.13 Ollama localhost connectivity fix
+
+- Local Ollama HTTP requests bypass operating-system proxy configuration; cloud provider requests keep their normal proxy behavior.
+- Local service checks, model downloads and conversations share an Ollama base URL, allowing a safely parsed loopback-only `OLLAMA_HOST` with a non-default port.
+- NOEMA no longer conflates the Ollama desktop application's state with its separate HTTP API status; connection errors preserve the actual endpoint and transport error.
+- Existing models and their configured model directories are never modified by a connection check. The writer can test the local API in PowerShell with `Invoke-RestMethod http://127.0.0.1:11434/api/tags` if Ollama uses the default address.
+- This is a desktop-app hotfix; its availability depends on the Windows build and upgrade check passing.
