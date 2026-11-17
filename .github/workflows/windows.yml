@@ -2,7 +2,7 @@ name: Windows verification and installer
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, preview/chatgpt-0.1.14]
   pull_request:
 
 # Supersede obsolete PR checks, but never cancel a main-branch release build.
