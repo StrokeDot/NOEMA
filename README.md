@@ -1,8 +1,19 @@
-# NOEMA — Version 0.1.8 release candidate
+# NOEMA - Version 0.1.14 release candidate
 
 **Where Thought Becomes Legacy.**
 
-A local-first writing studio built with Tauri 2, React, TypeScript, Tiptap, Rust, and SQLite FTS5. **Book writing is NOEMA's focus**; legacy script tools remain for migration to SCRIPTORIA. Books, research and author-approved knowledge are stored locally. An optional AI conversation can use a separately billed OpenAI API key or an independently installed local Ollama model; offline editing doesn't require either.
+A local-first writing studio built with Tauri 2, React, TypeScript, Tiptap, Rust, and SQLite FTS5. **Book writing is NOEMA's focus**; legacy script tools remain for migration to SCRIPTORIA. Books, research and author-approved knowledge are stored locally. Optional AI conversations can use an eligible ChatGPT plan, separately billed OpenAI or Anthropic API connections, or a local Ollama model. Offline editing does not require an AI connection.
+
+## ChatGPT subscription connection
+
+The Windows app adds **Cloud AI → ChatGPT subscription → Continue with ChatGPT**.
+An eligible account can authorize NOEMA to use its ChatGPT plan without an API
+key. Available models come from the signed-in account. NOEMA retains its own
+book context and project memory; this connection does not import ChatGPT chats.
+See [connection setup and validation](docs/CHATGPT_SUBSCRIPTION.md).
+
+Version 0.1.14 becomes available through the existing updater only after it is
+merged to main and the Windows installer and upgrade checks succeed.
 
 ## Delivery status
 

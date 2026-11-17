@@ -15,6 +15,26 @@ permissions:
   actions: read
 
 jobs:
+  chatgpt-native:
+    name: Windows ChatGPT connection tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: |
+            src-tauri -> target
+            crates/noema-core -> target
+      - name: Prepare frontend asset directory for native test context
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Set-Content -Path dist/index.html -Value '<!doctype html><title>Native tests</title>'
+      - name: Test supported sign-in and Responses streaming
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
   # FAST GATE: no NSIS packaging on a pull request.
   # Every main-branch release must pass this job before the Windows build starts.
   verify:
@@ -55,7 +75,7 @@ jobs:
   # The existing filename is required by the NOEMA updater's discovery API.
   windows:
     name: Build and upgrade-test the Windows installer
-    needs: verify
+    needs: [verify, chatgpt-native]
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
     timeout-minutes: 45
@@ -90,8 +110,8 @@ jobs:
         run: npm run tauri build
       - uses: actions/upload-artifact@v4
         with:
-          name: NOEMA-0.1.13-Windows-installer
-          path: src-tauri/target/release/bundle/nsis/NOEMA_0.1.13_x64-setup.exe
+          name: NOEMA-0.1.14-Windows-installer
+          path: src-tauri/target/release/bundle/nsis/NOEMA_0.1.14_x64-setup.exe
           if-no-files-found: error
       - name: Download previously verified 0.1.0 installer for upgrade testing
         uses: actions/download-artifact@v4

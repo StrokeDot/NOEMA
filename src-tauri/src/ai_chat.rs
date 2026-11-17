@@ -1,5 +1,5 @@
 //! Project-local AI chat. No OpenAI token or external URLs are embedded in the app.
-//! The app does not use or mirror the user's ChatGPT Plus account/session.
+//! ChatGPT plan access uses a separate, supported SIWC connection in chatgpt.rs.
 use crate::Database;
 use keyring::Entry;
 use reqwest::Client;
@@ -350,6 +350,7 @@ pub async fn ai_pull_model(app:AppHandle,model:String)->Result<Value,String>{
 #[tauri::command]
 pub async fn ai_reply(
     db:State<'_,Database>,
+    chatgpt:State<'_,crate::chatgpt::ChatGptState>,
     project_id:String,
     provider:String,
     model:String,
@@ -359,7 +360,7 @@ pub async fn ai_reply(
 )->Result<Value,String>{
     if message.trim().is_empty() || message.len()>100_000 {return Err("Enter a shorter message".into());}
     let model=validated_model(&model)?;
-    if provider!="openai" && provider!="anthropic" && provider!="ollama"{return Err("Choose OpenAI, Anthropic Claude, or local Ollama".into());}
+    if provider!="openai" && provider!="anthropic" && provider!="ollama" && provider!="chatgpt"{return Err("Choose ChatGPT, OpenAI API, Anthropic Claude, or local Ollama".into());}
     // Persist original text immediately, before any model or network error.
     let (turn_id,ctx)={
         let mut store=db.lock().map_err(|_|"Cannot access project database".to_string())?;
@@ -383,7 +384,9 @@ pub async fn ai_reply(
     }
     // The newest writer input is sent unchanged, never its inferred meaning.
     messages.push(json!({"role":"user","content":message}));
-    let raw=if provider=="openai" {
+    let raw=if provider=="chatgpt" {
+        crate::chatgpt::reply(&chatgpt,model,&system,&messages).await?
+    }else if provider=="openai" {
         let key=entry()?.get_password().map_err(|_|"Add your OpenAI API key in NOEMA AI settings first".to_string())?;
         let response=client.post("https://api.openai.com/v1/chat/completions")
             .bearer_auth(key)

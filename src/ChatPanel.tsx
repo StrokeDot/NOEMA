@@ -2,6 +2,7 @@ import {useCallback,useEffect,useRef,useState} from "react";
 import {invoke,isTauri} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {request,errorText} from "./api";
+import ChatGptConnection,{emptyChatGptStatus,type ChatGptStatus,type ChatGptModel} from "./ChatGptConnection";
 import type {Document,Project} from "./types";
 type Turn={id:string;original_text:string;interpreted_text:string;interpretation_author_corrected:number;
   assistant_response:string;critical_review:string;critique_explored:number;provider:string;model:string;state:"pending"|"complete";created_at:number};
@@ -14,7 +15,7 @@ const isInstalled=(name:string,items:LocalModel[])=>{
   return items.some(item=>canonical(item.name||item.model||"")===canonical(name));
 };
 type Status={openai_key_saved:boolean;anthropic_key_saved:boolean};
-type AiProvider="ollama"|"openai"|"anthropic";
+type AiProvider="ollama"|"openai"|"anthropic"|"chatgpt";
 type WizardStep="source"|"provider"|"connect"|"details";
 type RecEvent={results:ArrayLike<{[n:number]:{transcript:string}}>};
 type SpeechEngine={lang:string;interimResults:boolean;onresult:((e:RecEvent)=>void)|null;
@@ -64,14 +65,21 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const [input,setInput]=useState("");
   const [provider,setProvider]=useState<AiProvider>(()=> {
     const saved=localStorage.getItem("noema-ai-provider");
-    return saved==="openai"||saved==="anthropic"?saved:"ollama";
+    return saved==="openai"||saved==="anthropic"||saved==="chatgpt"?saved:"ollama";
   });
   const [models,setModel]=useState({
+    chatgpt:"",
     openai:localStorage.getItem("noema-openai-model")||"gpt-4.1-mini",
     anthropic:localStorage.getItem("noema-anthropic-model")||"claude-sonnet-5-5",
     ollama:localStorage.getItem("noema-ollama-model")||"qwen3.5:9b",
   });
   const [configured,setConfigured]=useState({openai:false,anthropic:false});
+  const [chatGptStatus,setChatGptStatus]=useState<ChatGptStatus>(emptyChatGptStatus);
+  const [chatGptModels,setChatGptModels]=useState<ChatGptModel[]>([]);
+  const [chatGptModelAccount,setChatGptModelAccount]=useState<string|null>(null);
+  const [chatGptModelError,setChatGptModelError]=useState("");
+  const chatGptReady=chatGptStatus.connected&&chatGptModelAccount===chatGptStatus.active&&chatGptModels.some(m=>m.id===models.chatgpt);
+  const providerReady=provider==="ollama"|| (provider==="chatgpt"?chatGptReady:configured[provider]);
   const [key,setKey]=useState("");
   const [skill,setSkill]=useState("reflect");
   const [settings,setSettings]=useState(false);
@@ -124,6 +132,27 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     return()=>{active=false;speechRef.current?.stop()};
   },[refresh,onError]);
   useEffect(()=>{localStorage.setItem("noema-ai-provider",provider)},[provider]);
+  useEffect(()=>{
+    if(!isTauri())return;
+    let active=true;
+    void invoke<ChatGptStatus>("chatgpt_status").then(s=>{if(active)setChatGptStatus(s)})
+      .catch(e=>{if(active)setChatGptModelError(errorText(e))});
+    return()=>{active=false};
+  },[]);
+  useEffect(()=>{
+    setChatGptModels([]);setChatGptModelAccount(null);setModel(old=>({...old,chatgpt:""}));setChatGptModelError("");
+    if(!isTauri()||!chatGptStatus.connected)return;
+    let active=true;
+    void invoke<{models:ChatGptModel[]}>("chatgpt_models").then(result=>{
+      if(!active)return;
+      setChatGptModels(result.models);
+      setChatGptModelAccount(chatGptStatus.active);
+      const saved=localStorage.getItem("noema-chatgpt-model");
+      setModel(old=>({...old,chatgpt:result.models.find(m=>m.id===saved)?.id||result.models[0]?.id||""}));
+      if(!result.models.length)setChatGptModelError("No models are available for this ChatGPT account.");
+    }).catch(e=>{if(active)setChatGptModelError(errorText(e))});
+    return()=>{active=false};
+  },[chatGptStatus]);
   const discoverModels=useCallback(async()=>{
     if(!isTauri())return;
     setOllamaChecking(true);
@@ -187,7 +216,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   }
   function chooseWizardProvider(p:AiProvider){
     setProvider(p);setConnectError("");setKey("");
-    setWizardStep(p==="ollama" || configured[p]?"details":"connect");
+    setWizardStep(p==="chatgpt"?"connect":p==="ollama" || configured[p]?"details":"connect");
     if(p==="ollama")void discoverModels();
   }
   async function createDialogue(){
@@ -230,7 +259,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     }catch(e){onError(errorText(e))}
   }
   async function connect(){
-    if(provider==="ollama")return;
+    if(provider==="ollama"||provider==="chatgpt")return;
     setBusy(true);setConnectError("");
     try{
       await invoke("ai_configure_provider",{provider,apiKey:key.trim()});
@@ -242,7 +271,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     }catch(e){setConnectError(errorText(e))}finally{setBusy(false)}
   }
   async function disconnect(){
-    if(provider==="ollama")return;
+    if(provider==="ollama"||provider==="chatgpt")return;
     try{
       await invoke("ai_disconnect_provider",{provider});
       setConfigured(old=>({...old,[provider]:false}));
@@ -251,6 +280,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   }
   async function send(text:string){
     if(busy||!text.trim())return;
+    if(!providerReady){setNotice("Connect your writing partner and select an available model first.");setSettings(true);return;}
     if(!activeDialogue){setNotice("Choose your AI and create a dialogue first.");startNewDialogue();return;}
     setBusy(true);setNotice("Keeping your original wording and asking the selected AI…");
     setInput("");
@@ -388,7 +418,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
                 <span className="dialogue-wizard-icon">☁</span>
                 <strong>Cloud AI</strong>
                 <span>Connect an online model from ChatGPT's maker or Claude's maker.</span>
-                <small>Requires a provider connection and separate API billing</small>
+                <small>Use your ChatGPT plan or a provider API connection</small>
                 <b>Choose cloud →</b>
               </button>
             </div>
@@ -397,8 +427,13 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           {creating&&wizardStep==="provider"&&<div key="provider" className="dialogue-wizard-step">
             <span className="eyebrow">STEP 2 · CLOUD AI</span>
             <h2>Who would you like to write with?</h2>
-            <p>These connect to the model providers. They don't use your chat-app subscription automatically.</p>
+            <p>Use your ChatGPT subscription, or connect a separately billed provider API.</p>
             <div className="dialogue-wizard-options">
+              <button className="dialogue-wizard-choice" type="button" onClick={()=>chooseWizardProvider("chatgpt")}>
+                <span className="dialogue-wizard-icon">◎</span><strong>ChatGPT subscription</strong>
+                <span>Sign in through your browser and use your eligible ChatGPT plan.</span>
+                <small>No API key needed · shared plan allowance</small><b>Continue →</b>
+              </button>
               <button className="dialogue-wizard-choice" type="button" onClick={()=>chooseWizardProvider("openai")}>
                 <span className="dialogue-wizard-icon">◎</span><strong>ChatGPT · OpenAI</strong>
                 <span>Use OpenAI models to discuss, research and improve your manuscript.</span>
@@ -412,7 +447,19 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
             </div>
             <div className="dialogue-wizard-bottom"><button onClick={()=>setWizardStep("source")}>← Back</button><button onClick={()=>setCreating(false)}>Cancel</button></div>
           </div>}
-          {creating&&wizardStep==="connect"&&<form key="connect" className="dialogue-wizard-step" onSubmit={e=>{e.preventDefault();void connect()}}>
+          {creating&&wizardStep==="connect"&&provider==="chatgpt"&&<div key="chatgpt-connect" className="dialogue-wizard-step">
+            <h2>Connect your ChatGPT subscription</h2>
+            <ChatGptConnection status={chatGptStatus} onChange={setChatGptStatus} ready={chatGptReady}
+              onContinue={()=>{if(chatGptReady)setWizardStep("details")}}/>
+            {chatGptModelError&&<p role="alert">{chatGptModelError}</p>}
+            {chatGptStatus.connected&&<label>ChatGPT model<select aria-label="ChatGPT subscription model" value={models.chatgpt}
+              onChange={e=>{const model=e.target.value;setModel(old=>({...old,chatgpt:model}));localStorage.setItem("noema-chatgpt-model",model)}}>
+              {!chatGptModels.length&&<option value="">Loading available models…</option>}
+              {chatGptModels.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+            </select></label>}
+            <div className="dialogue-wizard-bottom"><button onClick={()=>setWizardStep("provider")}>← Back</button><button onClick={()=>setCreating(false)}>Cancel</button></div>
+          </div>}
+          {creating&&wizardStep==="connect"&&provider!=="chatgpt"&&<form key="connect" className="dialogue-wizard-step" onSubmit={e=>{e.preventDefault();void connect()}}>
             <span className="eyebrow">STEP 3 · PRIVATE CONNECTION</span>
             <h2>Connect {provider==="openai"?"ChatGPT models":"Claude models"}</h2>
             <p>NOEMA needs a private connection key from the {provider==="openai"?"OpenAI":"Anthropic"} developer platform. A normal chat subscription is not the same as API access.</p>
@@ -437,7 +484,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           {(editing||(creating&&wizardStep==="details"))&&<form key="details" className="dialogue-goal-form dialogue-wizard-step" onSubmit={e=>{e.preventDefault();void (editing?updateDialogue():createDialogue())}}>
             <span className="eyebrow">{editing?"REFINE THE PURPOSE":"YOUR BOOK'S NEXT CONVERSATION"}</span>
             <h2>{editing?"What is this dialogue aiming to achieve?":"What should we explore together?"}</h2>
-            {!editing&&<p className="dialogue-wizard-selection">Writing with {provider==="ollama"?"Local AI · Ollama":provider==="openai"?"ChatGPT models · OpenAI":"Claude models · Anthropic"}
+            {!editing&&<p className="dialogue-wizard-selection">Writing with {provider==="chatgpt"?"ChatGPT subscription":provider==="ollama"?"Local AI · Ollama":provider==="openai"?"ChatGPT models · OpenAI":"Claude models · Anthropic"}
               <button type="button" onClick={()=>setWizardStep("source")}>Change</button></p>}
             <label>Conversation subject
               <input required maxLength={180} value={editing?editTitle:newTitle}
@@ -465,6 +512,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
         </div>
         <div className="dialogue-model-grid">
           <label>Provider<select value={provider} onChange={e=>setProvider(e.target.value as typeof provider)}>
+            <option value="chatgpt">ChatGPT subscription</option>
             <option value="ollama">Local models · Ollama</option>
             <option value="openai">ChatGPT models · OpenAI API</option>
             <option value="anthropic">Claude models · Anthropic API</option>
@@ -473,7 +521,10 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
             const name=e.target.value;setModel(old=>({...old,[provider]:name}));
             localStorage.setItem("noema-"+provider+"-model",name);
           }}>
-            {provider==="openai"?<><option value="gpt-4.1-mini">gpt-4.1-mini</option>
+            {provider==="chatgpt"?<>
+              {!chatGptModels.length&&<option value="">{chatGptStatus.connected?"Loading available models…":"Connect ChatGPT first"}</option>}
+              {chatGptModels.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+            </>:provider==="openai"?<><option value="gpt-4.1-mini">gpt-4.1-mini</option>
               {models.openai!=="gpt-4.1-mini"&&<option value={models.openai}>{models.openai}</option>}</>:
             provider==="anthropic"?<>
               <option value="claude-sonnet-5-5">Claude Sonnet 5.5</option>
@@ -484,7 +535,11 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
                 {localModels.map(m=><option key={m.name} value={m.name}>{m.name} · {ollamaReady?"installed":"previously detected"}</option>)}</>}
           </select></label>
         </div>
-        {provider==="ollama"?<>
+        {provider==="chatgpt"?<>
+          <ChatGptConnection status={chatGptStatus} onChange={setChatGptStatus}/>
+          {chatGptModelError&&<p role="alert" className="dialogue-connect-error">{chatGptModelError}</p>}
+          {chatGptStatus.connected&&<button type="button" onClick={()=>setChatGptStatus(old=>({...old}))}>Refresh available models</button>}
+        </>:provider==="ollama"?<>
           <div className="dialogue-model-row"><strong>Available on this computer</strong>
             <button type="button" disabled={!!pulling||ollamaChecking||ollamaStarting} onClick={()=>void discoverModels()}>{ollamaChecking?"Checking…":"↻ Scan Ollama inventory"}</button></div>
           {!ollamaReady&&<button className="primary" type="button" disabled={ollamaStarting||ollamaChecking}
@@ -618,7 +673,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
               <select value={speechLanguage} aria-label="Speech recognition language" onChange={e=>setSpeechLanguage(e.target.value)}>
                 <option value="en-US">EN</option><option value="es-ES">ES</option></select>
               <button type="submit" className="primary" aria-label="Send message"
-                disabled={busy||!selected||!input.trim()||(provider!=="ollama"&&!configured[provider])}>
+                disabled={busy||!selected||!input.trim()||!providerReady}>
                 {busy?"Thinking…":"Send ↑"}</button>
             </div>
           </div>
