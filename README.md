@@ -1,8 +1,12 @@
-# NOEMA - Version 0.1.14 release candidate
+# NOEMA - Version 0.1.15
 
 **Where Thought Becomes Legacy.**
 
 A local-first writing studio built with Tauri 2, React, TypeScript, Tiptap, Rust, and SQLite FTS5. **Book writing is NOEMA's focus**; legacy script tools remain for migration to SCRIPTORIA. Books, research and author-approved knowledge are stored locally. Optional AI conversations can use an eligible ChatGPT plan, separately billed OpenAI or Anthropic API connections, or a local Ollama model. Offline editing does not require an AI connection.
+
+## More AI connection options
+
+Version 0.1.15 adds **DeepSeek Harness** and **DeepSeek API** alongside ChatGPT subscription sign-in, OpenAI API, Claude API, and Ollama. Harness is optional and uses a paired writing plugin prepared by NOEMA. See [DeepSeek setup](docs/DEEPSEEK_CONNECTIONS.md).
 
 ## ChatGPT subscription connection
 
@@ -12,7 +16,7 @@ key. Available models come from the signed-in account. NOEMA retains its own
 book context and project memory; this connection does not import ChatGPT chats.
 See [connection setup and validation](docs/CHATGPT_SUBSCRIPTION.md).
 
-Version 0.1.14 becomes available through the existing updater only after it is
+Each release becomes available through the existing updater only after it is
 merged to main and the Windows installer and upgrade checks succeed.
 
 ## Delivery status

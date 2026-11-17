@@ -1,6 +1,7 @@
 mod private_updates;
 mod ai_chat;
 mod chatgpt;
+mod harness;
 use noema_core::Store;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -66,12 +67,13 @@ fn open_github_token_setup() -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     Err("Private GitHub updater setup is currently supported on Windows.".into())
 }
-// Safe help action: only two pre-approved official provider URLs can open.
+// Safe help action: only fixed official provider URLs can open.
 #[tauri::command]
 fn open_ai_provider_setup(provider:String)->Result<(),String>{
     let url=match provider.as_str(){
         "openai"=>"https://platform.openai.com/api-keys",
         "anthropic"=>"https://console.anthropic.com/settings/keys",
+        "deepseek"=>"https://platform.deepseek.com/api_keys",
         _=>return Err("Unknown AI provider".into())
     };
     #[cfg(target_os="windows")]
@@ -120,6 +122,9 @@ pub fn run() {
             ai_chat::ai_local_models,
             ai_chat::ai_start_ollama,
             ai_chat::ai_pull_model,
+            harness::harness_prepare,
+            harness::harness_open_setup,
+            harness::harness_models,
             chatgpt::chatgpt_status,
             chatgpt::chatgpt_login,
             chatgpt::chatgpt_cancel_login,

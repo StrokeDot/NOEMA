@@ -57,6 +57,8 @@ jobs:
         run: npm run build
       - name: Run UI unit tests
         run: npm test
+      - name: Test the optional paired Harness writing bridge
+        run: npm run test:harness
       - name: Test book database, migrations and preservation
         run: npm run test:core
       - name: Install Chromium and Linux browser dependencies
@@ -110,8 +112,8 @@ jobs:
         run: npm run tauri build
       - uses: actions/upload-artifact@v4
         with:
-          name: NOEMA-0.1.14-Windows-installer
-          path: src-tauri/target/release/bundle/nsis/NOEMA_0.1.14_x64-setup.exe
+          name: NOEMA-0.1.15-Windows-installer
+          path: src-tauri/target/release/bundle/nsis/NOEMA_0.1.15_x64-setup.exe
           if-no-files-found: error
       - name: Download previously verified 0.1.0 installer for upgrade testing
         uses: actions/download-artifact@v4
