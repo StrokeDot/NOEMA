@@ -3,6 +3,7 @@ import {invoke,isTauri} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {request,errorText} from "./api";
 import ChatGptConnection,{emptyChatGptStatus,type ChatGptStatus,type ChatGptModel} from "./ChatGptConnection";
+import HarnessConnection,{type HarnessModel} from "./HarnessConnection";
 import type {Document,Project} from "./types";
 type Turn={id:string;original_text:string;interpreted_text:string;interpretation_author_corrected:number;
   assistant_response:string;critical_review:string;critique_explored:number;provider:string;model:string;state:"pending"|"complete";created_at:number};
@@ -14,8 +15,10 @@ const isInstalled=(name:string,items:LocalModel[])=>{
   const canonical=(value:string)=>value.toLowerCase().replace(/:latest$/,"");
   return items.some(item=>canonical(item.name||item.model||"")===canonical(name));
 };
-type Status={openai_key_saved:boolean;anthropic_key_saved:boolean};
-type AiProvider="ollama"|"openai"|"anthropic"|"chatgpt";
+type Status={openai_key_saved:boolean;anthropic_key_saved:boolean;deepseek_key_saved?:boolean};
+type AiProvider="ollama"|"openai"|"anthropic"|"chatgpt"|"deepseek"|"harness";
+const providerNames:Record<AiProvider,string>={ollama:"Local AI · Ollama",openai:"OpenAI API",anthropic:"Claude API",chatgpt:"ChatGPT subscription",deepseek:"DeepSeek API",harness:"DeepSeek Harness"};
+const setupUrls={openai:"https://platform.openai.com/api-keys",anthropic:"https://console.anthropic.com/settings/keys",deepseek:"https://platform.deepseek.com/api_keys"};
 type WizardStep="source"|"provider"|"connect"|"details";
 type RecEvent={results:ArrayLike<{[n:number]:{transcript:string}}>};
 type SpeechEngine={lang:string;interimResults:boolean;onresult:((e:RecEvent)=>void)|null;
@@ -65,21 +68,24 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const [input,setInput]=useState("");
   const [provider,setProvider]=useState<AiProvider>(()=> {
     const saved=localStorage.getItem("noema-ai-provider");
-    return saved==="openai"||saved==="anthropic"||saved==="chatgpt"?saved:"ollama";
+    return saved==="openai"||saved==="anthropic"||saved==="chatgpt"||saved==="deepseek"||saved==="harness"?saved:"ollama";
   });
   const [models,setModel]=useState({
     chatgpt:"",
+    harness:localStorage.getItem("noema-harness-model")||"",
+    deepseek:localStorage.getItem("noema-deepseek-model")||"deepseek-flash",
     openai:localStorage.getItem("noema-openai-model")||"gpt-4.1-mini",
     anthropic:localStorage.getItem("noema-anthropic-model")||"claude-sonnet-5-5",
     ollama:localStorage.getItem("noema-ollama-model")||"qwen3.5:9b",
   });
-  const [configured,setConfigured]=useState({openai:false,anthropic:false});
+  const [configured,setConfigured]=useState({openai:false,anthropic:false,deepseek:false});
+  const [harnessModels,setHarnessModels]=useState<HarnessModel[]>([]);
   const [chatGptStatus,setChatGptStatus]=useState<ChatGptStatus>(emptyChatGptStatus);
   const [chatGptModels,setChatGptModels]=useState<ChatGptModel[]>([]);
   const [chatGptModelAccount,setChatGptModelAccount]=useState<string|null>(null);
   const [chatGptModelError,setChatGptModelError]=useState("");
   const chatGptReady=chatGptStatus.connected&&chatGptModelAccount===chatGptStatus.active&&chatGptModels.some(m=>m.id===models.chatgpt);
-  const providerReady=provider==="ollama"|| (provider==="chatgpt"?chatGptReady:configured[provider]);
+  const providerReady=provider==="ollama"|| (provider==="chatgpt"?chatGptReady:provider==="harness"?harnessModels.some(m=>m.id===models.harness):configured[provider]);
   const [key,setKey]=useState("");
   const [skill,setSkill]=useState("reflect");
   const [settings,setSettings]=useState(false);
@@ -127,11 +133,24 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   useEffect(()=>{
     let active=true;
     void refresh().catch(e=>{if(active)onError(errorText(e))});
-    if(isTauri())void invoke<Status>("ai_status").then(s=>{if(active)setConfigured({openai:s.openai_key_saved,anthropic:!!s.anthropic_key_saved})})
+    if(isTauri())void invoke<Status>("ai_status").then(s=>{if(active)setConfigured({openai:s.openai_key_saved,anthropic:!!s.anthropic_key_saved,deepseek:!!s.deepseek_key_saved})})
       .catch(e=>{if(active)onError(errorText(e))});
     return()=>{active=false;speechRef.current?.stop()};
   },[refresh,onError]);
   useEffect(()=>{localStorage.setItem("noema-ai-provider",provider)},[provider]);
+  const selectHarnessModel=useCallback((id:string)=>{
+    setModel(old=>({...old,harness:id}));localStorage.setItem("noema-harness-model",id);
+  },[]);
+  const updateHarnessModels=useCallback((items:HarnessModel[])=>{
+    setHarnessModels(items);
+    setModel(old=>({...old,harness:items.some(m=>m.id===old.harness)?old.harness:items[0]?.id||""}));
+  },[]);
+  useEffect(()=>{
+    if(provider!=="harness"||!isTauri())return;
+    let active=true;
+    void invoke<{models:HarnessModel[]}>("harness_models").then(r=>{if(active)updateHarnessModels(r.models)}).catch(()=>{if(active)updateHarnessModels([])});
+    return()=>{active=false};
+  },[provider,updateHarnessModels]);
   useEffect(()=>{
     if(!isTauri())return;
     let active=true;
@@ -216,7 +235,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   }
   function chooseWizardProvider(p:AiProvider){
     setProvider(p);setConnectError("");setKey("");
-    setWizardStep(p==="chatgpt"?"connect":p==="ollama" || configured[p]?"details":"connect");
+    setWizardStep(p==="chatgpt"||p==="harness"?"connect":p==="ollama" || configured[p]?"details":"connect");
     if(p==="ollama")void discoverModels();
   }
   async function createDialogue(){
@@ -259,19 +278,19 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     }catch(e){onError(errorText(e))}
   }
   async function connect(){
-    if(provider==="ollama"||provider==="chatgpt")return;
+    if(provider==="ollama"||provider==="chatgpt"||provider==="harness")return;
     setBusy(true);setConnectError("");
     try{
       await invoke("ai_configure_provider",{provider,apiKey:key.trim()});
       setConfigured(old=>({...old,[provider]:true}));
       setKey("");
-      setNotice((provider==="openai"?"OpenAI":"Claude")+" connection saved securely on this computer.");
+      setNotice(providerNames[provider]+" connection saved securely on this computer.");
       if(creating&&wizardStep==="connect")setWizardStep("details");
       else setSettings(false);
     }catch(e){setConnectError(errorText(e))}finally{setBusy(false)}
   }
   async function disconnect(){
-    if(provider==="ollama"||provider==="chatgpt")return;
+    if(provider==="ollama"||provider==="chatgpt"||provider==="harness")return;
     try{
       await invoke("ai_disconnect_provider",{provider});
       setConfigured(old=>({...old,[provider]:false}));
@@ -417,7 +436,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
               <button className="dialogue-wizard-choice" type="button" onClick={()=>setWizardStep("provider")}>
                 <span className="dialogue-wizard-icon">☁</span>
                 <strong>Cloud AI</strong>
-                <span>Connect an online model from ChatGPT's maker or Claude's maker.</span>
+                <span>Connect ChatGPT, Claude or DeepSeek as your writing partner.</span>
                 <small>Use your ChatGPT plan or a provider API connection</small>
                 <b>Choose cloud →</b>
               </button>
@@ -427,12 +446,22 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           {creating&&wizardStep==="provider"&&<div key="provider" className="dialogue-wizard-step">
             <span className="eyebrow">STEP 2 · CLOUD AI</span>
             <h2>Who would you like to write with?</h2>
-            <p>Use your ChatGPT subscription, or connect a separately billed provider API.</p>
+            <p>Use your ChatGPT subscription, your DeepSeek Harness connection, or a provider API.</p>
             <div className="dialogue-wizard-options">
               <button className="dialogue-wizard-choice" type="button" onClick={()=>chooseWizardProvider("chatgpt")}>
                 <span className="dialogue-wizard-icon">◎</span><strong>ChatGPT subscription</strong>
                 <span>Sign in through your browser and use your eligible ChatGPT plan.</span>
                 <small>No API key needed · shared plan allowance</small><b>Continue →</b>
+              </button>
+              <button className="dialogue-wizard-choice" type="button" onClick={()=>chooseWizardProvider("harness")}>
+                <span className="dialogue-wizard-icon">◈</span><strong>DeepSeek Harness</strong>
+                <span>Use the DeepSeek account or model connection in your installed Harness.</span>
+                <small>Optional local companion connection</small><b>Continue →</b>
+              </button>
+              <button className="dialogue-wizard-choice" type="button" onClick={()=>chooseWizardProvider("deepseek")}>
+                <span className="dialogue-wizard-icon">◈</span><strong>DeepSeek API</strong>
+                <span>Connect directly using your DeepSeek API key.</span>
+                <small>Uses your DeepSeek API balance</small><b>Continue →</b>
               </button>
               <button className="dialogue-wizard-choice" type="button" onClick={()=>chooseWizardProvider("openai")}>
                 <span className="dialogue-wizard-icon">◎</span><strong>ChatGPT · OpenAI</strong>
@@ -459,10 +488,15 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
             </select></label>}
             <div className="dialogue-wizard-bottom"><button onClick={()=>setWizardStep("provider")}>← Back</button><button onClick={()=>setCreating(false)}>Cancel</button></div>
           </div>}
-          {creating&&wizardStep==="connect"&&provider!=="chatgpt"&&<form key="connect" className="dialogue-wizard-step" onSubmit={e=>{e.preventDefault();void connect()}}>
+          {creating&&wizardStep==="connect"&&provider==="harness"&&<div key="harness-connect" className="dialogue-wizard-step">
+            <h2>Connect DeepSeek Harness</h2>
+            <HarnessConnection models={harnessModels} selected={models.harness} onSelect={selectHarnessModel} onModels={updateHarnessModels} onContinue={()=>setWizardStep("details")}/>
+            <div className="dialogue-wizard-bottom"><button onClick={()=>setWizardStep("provider")}>← Back</button><button onClick={()=>setCreating(false)}>Cancel</button></div>
+          </div>}
+          {creating&&wizardStep==="connect"&&provider!=="chatgpt"&&provider!=="harness"&&<form key="connect" className="dialogue-wizard-step" onSubmit={e=>{e.preventDefault();void connect()}}>
             <span className="eyebrow">STEP 3 · PRIVATE CONNECTION</span>
-            <h2>Connect {provider==="openai"?"ChatGPT models":"Claude models"}</h2>
-            <p>NOEMA needs a private connection key from the {provider==="openai"?"OpenAI":"Anthropic"} developer platform. A normal chat subscription is not the same as API access.</p>
+            <h2>Connect {provider==="deepseek"?"DeepSeek":provider==="openai"?"ChatGPT models":"Claude models"}</h2>
+            <p>NOEMA needs a private connection key from the {provider==="deepseek"?"DeepSeek":provider==="openai"?"OpenAI":"Anthropic"} developer platform. A normal chat subscription is not the same as API access.</p>
             <label>Provider connection key
               <input autoComplete="off" type="password" value={key} onChange={e=>setKey(e.target.value)}
                 placeholder="Paste your connection key here" aria-label="Provider connection key"/>
@@ -475,8 +509,8 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
             </div>
             <div className="dialogue-wizard-help">
               <button type="button" onClick={()=>{if(isTauri())void invoke("open_ai_provider_setup",{provider}).catch(e=>setConnectError(errorText(e)));
-                else window.open(provider==="openai"?"https://platform.openai.com/api-keys":"https://console.anthropic.com/settings/keys","_blank","noopener,noreferrer")}}>
-                Open {provider==="openai"?"OpenAI":"Anthropic"} connection setup ↗
+                else if(provider==="openai"||provider==="anthropic"||provider==="deepseek")window.open(setupUrls[provider],"_blank","noopener,noreferrer")}}>
+                Open {provider==="deepseek"?"DeepSeek":provider==="openai"?"OpenAI":"Anthropic"} connection setup ↗
               </button>
               <p>This opens the provider's official website. After signing in there, create a connection key and paste it above. API charges are separate from your chat subscription.</p>
             </div>
@@ -484,7 +518,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           {(editing||(creating&&wizardStep==="details"))&&<form key="details" className="dialogue-goal-form dialogue-wizard-step" onSubmit={e=>{e.preventDefault();void (editing?updateDialogue():createDialogue())}}>
             <span className="eyebrow">{editing?"REFINE THE PURPOSE":"YOUR BOOK'S NEXT CONVERSATION"}</span>
             <h2>{editing?"What is this dialogue aiming to achieve?":"What should we explore together?"}</h2>
-            {!editing&&<p className="dialogue-wizard-selection">Writing with {provider==="chatgpt"?"ChatGPT subscription":provider==="ollama"?"Local AI · Ollama":provider==="openai"?"ChatGPT models · OpenAI":"Claude models · Anthropic"}
+            {!editing&&<p className="dialogue-wizard-selection">Writing with {providerNames[provider]}
               <button type="button" onClick={()=>setWizardStep("source")}>Change</button></p>}
             <label>Conversation subject
               <input required maxLength={180} value={editing?editTitle:newTitle}
@@ -511,8 +545,10 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           <button onClick={()=>setSettings(false)}>Close</button>
         </div>
         <div className="dialogue-model-grid">
-          <label>Provider<select value={provider} onChange={e=>setProvider(e.target.value as typeof provider)}>
+          <label>Provider<select aria-label="Provider" value={provider} onChange={e=>setProvider(e.target.value as typeof provider)}>
             <option value="chatgpt">ChatGPT subscription</option>
+            <option value="harness">DeepSeek Harness</option>
+            <option value="deepseek">DeepSeek API</option>
             <option value="ollama">Local models · Ollama</option>
             <option value="openai">ChatGPT models · OpenAI API</option>
             <option value="anthropic">Claude models · Anthropic API</option>
@@ -521,7 +557,13 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
             const name=e.target.value;setModel(old=>({...old,[provider]:name}));
             localStorage.setItem("noema-"+provider+"-model",name);
           }}>
-            {provider==="chatgpt"?<>
+            {provider==="harness"?<>
+              {!harnessModels.length&&<option value="">Connect Harness first</option>}
+              {harnessModels.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+            </>:provider==="deepseek"?<>
+              <option value="deepseek-flash">DeepSeek Flash</option><option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+              {models.deepseek!=="deepseek-flash"&&models.deepseek!=="deepseek-v4-pro"&&<option value={models.deepseek}>{models.deepseek}</option>}
+            </>:provider==="chatgpt"?<>
               {!chatGptModels.length&&<option value="">{chatGptStatus.connected?"Loading available models…":"Connect ChatGPT first"}</option>}
               {chatGptModels.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
             </>:provider==="openai"?<><option value="gpt-4.1-mini">gpt-4.1-mini</option>
@@ -535,7 +577,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
                 {localModels.map(m=><option key={m.name} value={m.name}>{m.name} · {ollamaReady?"installed":"previously detected"}</option>)}</>}
           </select></label>
         </div>
-        {provider==="chatgpt"?<>
+        {provider==="harness"?<HarnessConnection models={harnessModels} selected={models.harness} onSelect={selectHarnessModel} onModels={updateHarnessModels}/>:provider==="chatgpt"?<>
           <ChatGptConnection status={chatGptStatus} onChange={setChatGptStatus}/>
           {chatGptModelError&&<p role="alert" className="dialogue-connect-error">{chatGptModelError}</p>}
           {chatGptStatus.connected&&<button type="button" onClick={()=>setChatGptStatus(old=>({...old}))}>Refresh available models</button>}
@@ -579,7 +621,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           <label>Provider connection key<input type="password" autoComplete="off" value={key} onChange={e=>setKey(e.target.value)} placeholder="Paste your connection key"/></label>
           <div className="dialogue-model-row">
             <button disabled={busy||key.trim().length<25} onClick={()=>void connect()}>Save connection</button>
-            {configured[provider]&&<button disabled={busy} onClick={()=>void disconnect()}>Disconnect {provider==="openai"?"OpenAI":"Claude"}</button>}
+            {configured[provider]&&<button disabled={busy} onClick={()=>void disconnect()}>Disconnect {provider==="deepseek"?"DeepSeek":provider==="openai"?"OpenAI":"Claude"}</button>}
           </div>
           {connectError&&<p className="dialogue-connect-error" role="alert">{connectError}</p>}
           <small>Keys are kept in Windows Credential Manager. Provider API usage may have separate charges.</small>

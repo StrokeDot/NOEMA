@@ -1,6 +1,6 @@
 {
   "name": "noema",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:harness": "node --test tests/harness-bridge.node.mjs",
     "test:core": "cargo test --manifest-path crates/noema-core/Cargo.toml",
     "test:e2e": "playwright test",
     "format": "prettier --write src tests *.json *.ts *.md .github",

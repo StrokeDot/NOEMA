@@ -9,6 +9,7 @@ use std::time::Duration;
 
 const SECRET_SERVICE:&str="NOEMA-OpenAI-API";
 const ANTHROPIC_SERVICE:&str="NOEMA-Anthropic-API";
+const DEEPSEEK_SERVICE:&str="NOEMA-DeepSeek-API";
 const SECRET_USER:&str="api-key";
 fn entry()->Result<Entry,String> {
     Entry::new(SECRET_SERVICE,SECRET_USER).map_err(|_|"Credential storage is unavailable".into())
@@ -17,7 +18,8 @@ fn provider_entry(provider:&str)->Result<Entry,String>{
     let service=match provider {
         "openai"=>SECRET_SERVICE,
         "anthropic"=>ANTHROPIC_SERVICE,
-        _=>return Err("Choose OpenAI or Anthropic".into())
+        "deepseek"=>DEEPSEEK_SERVICE,
+        _=>return Err("Choose OpenAI, Anthropic or DeepSeek".into())
     };
     Entry::new(service,SECRET_USER).map_err(|_|"Windows credential storage is unavailable".into())
 }
@@ -28,6 +30,7 @@ fn has_key(provider:&str)->bool {
 pub fn ai_status()->Value {
     json!({"openai_key_saved":has_key("openai"),
            "anthropic_key_saved":has_key("anthropic"),
+           "deepseek_key_saved":has_key("deepseek"),
            "openai_provider":"OpenAI API (separate billing from ChatGPT)",
            "anthropic_provider":"Anthropic Claude API (separate billing from Claude chat)",
            "ollama_provider":"Ollama local model (runs on your computer)"})
@@ -360,7 +363,7 @@ pub async fn ai_reply(
 )->Result<Value,String>{
     if message.trim().is_empty() || message.len()>100_000 {return Err("Enter a shorter message".into());}
     let model=validated_model(&model)?;
-    if provider!="openai" && provider!="anthropic" && provider!="ollama" && provider!="chatgpt"{return Err("Choose ChatGPT, OpenAI API, Anthropic Claude, or local Ollama".into());}
+    if !["openai","anthropic","ollama","chatgpt","deepseek","harness"].contains(&provider.as_str()){return Err("Choose an available writing provider".into());}
     // Persist original text immediately, before any model or network error.
     let (turn_id,ctx)={
         let mut store=db.lock().map_err(|_|"Cannot access project database".to_string())?;
@@ -386,6 +389,17 @@ pub async fn ai_reply(
     messages.push(json!({"role":"user","content":message}));
     let raw=if provider=="chatgpt" {
         crate::chatgpt::reply(&chatgpt,model,&system,&messages).await?
+    }else if provider=="harness" {
+        crate::harness::reply(model,&messages).await?
+    }else if provider=="deepseek" {
+        let key=provider_entry("deepseek")?.get_password().map_err(|_|"Save your DeepSeek API key in NOEMA first")?;
+        let response=client.post("https://api.deepseek.com/chat/completions").bearer_auth(key)
+            .json(&json!({"model":model,"messages":messages,"stream":false,"thinking":{"type":"disabled"},"response_format":{"type":"json_object"}}))
+            .send().await.map_err(|_|"Could not contact DeepSeek. Your original input is preserved")?;
+        let status=response.status();
+        if !status.is_success(){return Err(format!("DeepSeek API request failed ({status}). Check the API key, model access and balance; your original input is preserved"));}
+        let body:Value=response.json().await.map_err(|_|"DeepSeek returned an unreadable response")?;
+        body["choices"][0]["message"]["content"].as_str().ok_or("DeepSeek returned no writing reply")?.to_string()
     }else if provider=="openai" {
         let key=entry()?.get_password().map_err(|_|"Add your OpenAI API key in NOEMA AI settings first".to_string())?;
         let response=client.post("https://api.openai.com/v1/chat/completions")
