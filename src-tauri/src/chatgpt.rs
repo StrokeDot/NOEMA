@@ -30,7 +30,7 @@ fn secret(name: &str) -> Result<Entry, String> {
 }
 fn client() -> Result<Client, String> {
     Client::builder().redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(240))
+        .connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(30))
         .build().map_err(|_| "Could not initialize the ChatGPT connection".into())
 }
 fn required<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
@@ -222,6 +222,7 @@ async fn validated_identity(http: &Client, token: &str, client_id: &str, nonce: 
     let mut validation = Validation::new(header.alg);
     validation.set_audience(&[client_id]); validation.set_issuer(&[AUTH]);
     validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
+    validation.validate_nbf = true;
     let claims = decode::<Value>(token, &key, &validation).map_err(|_| "OpenAI identity verification failed")?.claims;
     if claims["nonce"].as_str() != Some(nonce) { return Err("OpenAI identity nonce did not match".into()) }
     required(&claims, "sub")?; Ok(claims)
@@ -260,14 +261,23 @@ pub async fn chatgpt_login(state: State<'_, ChatGptState>, account_id: Option<St
         open_browser(&url)?;
         let selected = saved.as_ref().and_then(|a| a["client_id"].as_str());
         let (code, issued) = receive_callback(&listener, &oauth_state, selected).await?;
+        let suffix: String = issued.chars().rev().take(8).collect::<String>().chars().rev().collect();
+        // Keep a newly issued registration even if exchanging its one-use code
+        // fails. A retry must reuse it instead of creating duplicate clients.
+        if saved.is_none() && !vault["accounts"].as_array().unwrap().iter().any(|a| a["client_id"] == issued) {
+            vault["accounts"].as_array_mut().unwrap().push(json!({
+                "client_id": issued, "label": format!("Pending ChatGPT sign-in · {suffix}")
+            }));
+            save_vault(&vault)?;
+        }
         let http = client()?;
         let token = token_request(&http, &[("grant_type", "authorization_code"), ("client_id", &issued),
             ("code", &code), ("code_verifier", &verifier), ("redirect_uri", &redirect), ("resource", RESOURCE)]).await?;
         let claims = validated_identity(&http, required(&token, "id_token")?, &issued, &nonce).await?;
-        if let Some(saved) = &saved { if saved["subject"] != claims["sub"] { return Err("The signed-in account does not match the selected registration".into()) } }
+        if let Some(saved) = &saved { if saved["subject"].is_string() && saved["subject"] != claims["sub"] { return Err("The signed-in account does not match the selected registration".into()) } }
         let mut account = saved.clone().unwrap_or_else(|| json!({"client_id": issued, "subject": claims["sub"]}));
+        account["subject"] = claims["sub"].clone();
         let email = claims["email"].as_str().unwrap_or("ChatGPT account");
-        let suffix: String = issued.chars().rev().take(8).collect::<String>().chars().rev().collect();
         account["label"] = json!(format!("{email} · {suffix}"));
         apply_tokens(&mut account, &token, false)?;
         let accounts = vault["accounts"].as_array_mut().unwrap();
@@ -408,7 +418,7 @@ pub async fn reply(state: &ChatGptState, model: &str, instructions: &str, messag
     let _guard = state.operation.lock().await; let mut vault = load_vault()?; let http = client()?;
     let token = active_token(&mut vault, &http).await?;
     let input: Vec<Value> = messages.iter().filter(|m| m["role"] == "user" || m["role"] == "assistant").cloned().collect();
-    let mut r = http.post(format!("{RESOURCE}/responses")).bearer_auth(token).json(&json!({
+    let mut r = http.post(format!("{RESOURCE}/responses")).timeout(Duration::from_secs(240)).bearer_auth(token).json(&json!({
         "model": model, "instructions": instructions, "input": input, "store": false, "stream": true
     })).send().await.map_err(|_| "Could not contact ChatGPT. Your original message is preserved.")?;
     if !r.status().is_success() { return Err(request_error(r.status())) }
@@ -465,5 +475,17 @@ mod tests {
     fn public_status_never_exposes_tokens() {
         let status = public_status(&json!({"active":"a", "accounts":[{"client_id":"a","label":"Writer","access_token":"secret", "refresh_token":"refresh", "id_token":"identity"}]}));
         assert_eq!(status["connected"], true); assert!(!status.to_string().contains("secret"));
+    }
+    #[test]
+    fn missing_plan_permission_does_not_replace_saved_credentials() {
+        let mut account = json!({"access_token":"original", "refresh_token":"original-refresh", "scope":"chatgpt.tokens.use.direct"});
+        let before = account.clone();
+        let denied = json!({"access_token":"new", "refresh_token":"new-refresh", "scope":"openid email", "token_type":"Bearer", "expires_in":3600});
+        assert!(apply_tokens(&mut account, &denied, true).is_err());
+        assert_eq!(account, before);
+        let renewed = json!({"access_token":"new", "refresh_token":"rotated", "token_type":"Bearer", "expires_in":3600});
+        apply_tokens(&mut account, &renewed, true).unwrap();
+        assert_eq!(account["refresh_token"], "rotated");
+        assert_eq!(account["scope"], "chatgpt.tokens.use.direct");
     }
 }

@@ -76,8 +76,9 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
   const [configured,setConfigured]=useState({openai:false,anthropic:false});
   const [chatGptStatus,setChatGptStatus]=useState<ChatGptStatus>(emptyChatGptStatus);
   const [chatGptModels,setChatGptModels]=useState<ChatGptModel[]>([]);
+  const [chatGptModelAccount,setChatGptModelAccount]=useState<string|null>(null);
   const [chatGptModelError,setChatGptModelError]=useState("");
-  const chatGptReady=chatGptStatus.connected&&chatGptModels.some(m=>m.id===models.chatgpt);
+  const chatGptReady=chatGptStatus.connected&&chatGptModelAccount===chatGptStatus.active&&chatGptModels.some(m=>m.id===models.chatgpt);
   const providerReady=provider==="ollama"|| (provider==="chatgpt"?chatGptReady:configured[provider]);
   const [key,setKey]=useState("");
   const [skill,setSkill]=useState("reflect");
@@ -139,12 +140,13 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
     return()=>{active=false};
   },[]);
   useEffect(()=>{
-    setChatGptModels([]);setModel(old=>({...old,chatgpt:""}));setChatGptModelError("");
+    setChatGptModels([]);setChatGptModelAccount(null);setModel(old=>({...old,chatgpt:""}));setChatGptModelError("");
     if(!isTauri()||!chatGptStatus.connected)return;
     let active=true;
     void invoke<{models:ChatGptModel[]}>("chatgpt_models").then(result=>{
       if(!active)return;
       setChatGptModels(result.models);
+      setChatGptModelAccount(chatGptStatus.active);
       const saved=localStorage.getItem("noema-chatgpt-model");
       setModel(old=>({...old,chatgpt:result.models.find(m=>m.id===saved)?.id||result.models[0]?.id||""}));
       if(!result.models.length)setChatGptModelError("No models are available for this ChatGPT account.");

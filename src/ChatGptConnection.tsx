@@ -28,7 +28,15 @@ export default function ChatGptConnection({status,onChange,onContinue,ready=fals
       if(!mounted.current)return;
       onChange(result);
       if(result.revoked===false)setNotice("Signed out on this computer. Remote revocation was not confirmed; disconnect NOEMA in ChatGPT Settings → Usage.");
-    }catch(e){if(mounted.current)setError(errorText(e))}
+    }catch(e){
+      if(mounted.current){
+        setError(errorText(e));
+        if(isTauri())try{
+          const current=await invoke<ChatGptStatus>("chatgpt_status");
+          if(mounted.current)onChange(current);
+        }catch{/* Keep the sign-in error if credential storage is unavailable. */}
+      }
+    }
     finally{if(mounted.current){setWorking(false);setSigningIn(false)}}
   }
   function login(accountId:string|null){
@@ -51,7 +59,8 @@ export default function ChatGptConnection({status,onChange,onContinue,ready=fals
       </div>)}
     </div>}
     <div className="dialogue-model-row">
-      <button type="button" className="primary" disabled={working} onClick={()=>login(null)}>Continue with ChatGPT</button>
+      <button type="button" className="primary" disabled={working} onClick={()=>login(status.active||status.accounts[0]?.id||null)}>Continue with ChatGPT</button>
+      {status.accounts.length>0&&<button type="button" disabled={working} onClick={()=>login(null)}>Add another ChatGPT account</button>}
       <button type="button" disabled={!isTauri()} onClick={()=>void invoke("chatgpt_open_usage").catch(e=>setError(errorText(e)))}>Manage ChatGPT usage</button>
       {signingIn&&<button type="button" onClick={()=>void invoke("chatgpt_cancel_login").catch(e=>setError(errorText(e)))}>Cancel sign-in</button>}
     </div>

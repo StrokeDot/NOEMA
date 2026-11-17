@@ -24,6 +24,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           workspaces: |
             src-tauri -> target
             crates/noema-core -> target
@@ -34,6 +35,9 @@ jobs:
           Set-Content -Path dist/index.html -Value '<!doctype html><title>Native tests</title>'
       - name: Test supported sign-in and Responses streaming
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+      - name: Report native dependency lock changes
+        if: always()
+        run: git diff -- src-tauri/Cargo.lock
   # FAST GATE: no NSIS packaging on a pull request.
   # Every main-branch release must pass this job before the Windows build starts.
   verify:

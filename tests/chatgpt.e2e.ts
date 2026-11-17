@@ -9,9 +9,12 @@ test("subscription connection uses account models, preserves API options and cle
     let active:string|null=null;
     const commands:{command:string;args:Record<string,unknown>}[]=[];
     const status=()=>({accounts:accounts.map(a=>({...a})),active,connected:accounts.some(a=>a.id===active&&a.connected)});
-    const host=window as unknown as {__TAURI_INTERNALS__:unknown;noemaCommands:typeof commands};
+    const host=window as unknown as {isTauri:boolean;__TAURI_INTERNALS__:unknown;__TAURI_EVENT_PLUGIN_INTERNALS__:unknown;noemaCommands:typeof commands};
+    host.isTauri=true;
+    host.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
     host.noemaCommands=commands;
     host.__TAURI_INTERNALS__={
+      metadata:{currentWindow:{label:"main"},currentWebview:{label:"main"}},
       transformCallback:()=>1,unregisterCallback:()=>{},
       invoke:async(command:string,args:Record<string,unknown>={})=>{
         commands.push({command,args});
@@ -20,6 +23,7 @@ test("subscription connection uses account models, preserves API options and cle
           const body=await r.json();if(!r.ok)throw new Error(body.error);return body;
         }
         if(command==="ai_status")return {openai_key_saved:false,anthropic_key_saved:false};
+        if(command==="update_check")return {available:false};
         if(command==="chatgpt_status")return status();
         if(command==="chatgpt_login"){
           const id=typeof args.accountId==="string"?args.accountId:accounts.length?"oaiapp_b":"oaiapp_a";
@@ -62,7 +66,7 @@ test("subscription connection uses account models, preserves API options and cle
   await page.getByRole("button",{name:"Create dialogue"}).click();
   await page.getByRole("button",{name:"Choose AI model"}).click();
   await expect(page.getByLabel("Selected AI model")).toHaveValue("account-a-model");
-  await page.getByRole("button",{name:"Continue with ChatGPT",exact:true}).click();
+  await page.getByRole("button",{name:"Add another ChatGPT account",exact:true}).click();
   await expect(page.getByLabel("Selected AI model")).toHaveValue("account-b-model");
   await expect(page.getByRole("option",{name:"Model for A",exact:true})).toHaveCount(0);
   await page.getByRole("button",{name:"Use account",exact:true}).click();
