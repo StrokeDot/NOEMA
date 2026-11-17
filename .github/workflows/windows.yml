@@ -15,6 +15,25 @@ permissions:
   actions: read
 
 jobs:
+  chatgpt-native:
+    name: Windows ChatGPT connection tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+            crates/noema-core -> target
+      - name: Prepare frontend asset directory for native test context
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Set-Content -Path dist/index.html -Value '<!doctype html><title>Native tests</title>'
+      - name: Test supported sign-in and Responses streaming
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
   # FAST GATE: no NSIS packaging on a pull request.
   # Every main-branch release must pass this job before the Windows build starts.
   verify:

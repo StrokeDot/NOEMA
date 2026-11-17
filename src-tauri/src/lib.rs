@@ -1,5 +1,6 @@
 mod private_updates;
 mod ai_chat;
+mod chatgpt;
 use noema_core::Store;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -88,7 +89,14 @@ fn open_ai_provider_setup(provider:String)->Result<(),String>{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
+        .manage(chatgpt::ChatGptState::default())
         .setup(|app| {
             let root = app.path().app_data_dir()?;
             let store = Store::open(root).map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -112,6 +120,13 @@ pub fn run() {
             ai_chat::ai_local_models,
             ai_chat::ai_start_ollama,
             ai_chat::ai_pull_model,
+            chatgpt::chatgpt_status,
+            chatgpt::chatgpt_login,
+            chatgpt::chatgpt_cancel_login,
+            chatgpt::chatgpt_select,
+            chatgpt::chatgpt_models,
+            chatgpt::chatgpt_logout,
+            chatgpt::chatgpt_open_usage,
         ])
         .run(tauri::generate_context!())
         .expect("Unable to start NOEMA; check your data-folder permissions");

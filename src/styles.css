@@ -1451,3 +1451,8 @@ padding:10px;background:var(--paper);min-width:0;}
 @keyframes noema-connect-enter{from{opacity:0;transform:translateY(11px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:640px){.dialogue-wizard-options{grid-template-columns:1fr}.dialogue-wizard-choice{min-height:175px;padding:17px;gap:6px}.dialogue-wizard-frame{padding:22px 18px}.dialogue-wizard-icon{height:42px;width:42px;font-size:23px;margin:0}}
 @media(prefers-reduced-motion:reduce){.dialogue-wizard-step{animation:none}.dialogue-wizard-choice{transition:none}.dialogue-wizard-choice:hover{transform:none}}
+.chatgpt-connection { display: grid; gap: 12px; }
+.chatgpt-connection p { margin: 0; }
+.chatgpt-accounts { display: grid; gap: 10px; }
+.chatgpt-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line, #ddded4); border-radius: 10px; }
+.chatgpt-account > div { display: flex; flex-wrap: wrap; gap: 8px; }
