@@ -436,7 +436,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
               <button className="dialogue-wizard-choice" type="button" onClick={()=>setWizardStep("provider")}>
                 <span className="dialogue-wizard-icon">☁</span>
                 <strong>Cloud AI</strong>
-                <span>Connect an online model from ChatGPT's maker or Claude's maker.</span>
+                <span>Connect ChatGPT, Claude or DeepSeek as your writing partner.</span>
                 <small>Use your ChatGPT plan or a provider API connection</small>
                 <b>Choose cloud →</b>
               </button>
@@ -545,7 +545,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
           <button onClick={()=>setSettings(false)}>Close</button>
         </div>
         <div className="dialogue-model-grid">
-          <label>Provider<select value={provider} onChange={e=>setProvider(e.target.value as typeof provider)}>
+          <label>Provider<select aria-label="Provider" value={provider} onChange={e=>setProvider(e.target.value as typeof provider)}>
             <option value="chatgpt">ChatGPT subscription</option>
             <option value="harness">DeepSeek Harness</option>
             <option value="deepseek">DeepSeek API</option>
