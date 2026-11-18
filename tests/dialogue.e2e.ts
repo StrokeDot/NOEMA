@@ -80,7 +80,23 @@ test("saved explanatory visuals render alongside the reply", async ({ page, requ
     return response.json();
   }
 
-  const project = await store("create_project", { title: "Illustrated book", author: "Author" });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Your books begin here." })).toBeVisible();
+  await page.getByRole("button", { name: "+ Create a book" }).click();
+  const form = page.getByRole("dialog", { name: "New writing project" });
+  await form.getByLabel("Book title", { exact: true }).fill("Illustrated book");
+  await form.getByLabel("Author", { exact: true }).fill("Author");
+  const created = page.waitForResponse(response =>
+    response.url() === "http://127.0.0.1:4318/request" &&
+    response.request().method() === "POST" &&
+    response.request().postDataJSON()?.action === "create_project",
+  );
+  await form.getByRole("button", { name: "Create book →" }).click();
+  const createdResponse = await created;
+  expect(createdResponse.ok(), await createdResponse.text()).toBe(true);
+  const project = await createdResponse.json();
+  await expect(form).toBeHidden();
+
   const dialogue = await store("create_book_dialogue", {
     project_id: project.id, title: "From evidence to claim", goal: "Refine the argument."
   });
@@ -101,12 +117,8 @@ test("saved explanatory visuals render alongside the reply", async ({ page, requ
     });
   }
 
-  const openDialogue = async () => {
-    await page.getByRole("button", { name: "Open book: Illustrated book" }).click();
-    await page.getByRole("button", { name: "Book dialogue", exact: true }).click();
-  };
-  await page.goto("/");
-  await openDialogue();
+  const dialogueButton = page.getByRole("button", { name: "Book dialogue", exact: true });
+  await dialogueButton.click();
   for (const example of examples) {
     const figure = page.getByRole("figure", { name: example.title });
     await expect(figure).toBeVisible();
@@ -116,6 +128,8 @@ test("saved explanatory visuals render alongside the reply", async ({ page, requ
   }
 
   await page.reload();
-  await openDialogue();
+  await expect(page.getByRole("heading", { name: "Your books begin here." })).toBeVisible();
+  await page.getByRole("button", { name: "Open book: Illustrated book", exact: true }).click();
+  await dialogueButton.click();
   await expect(page.getByRole("figure", { name: "Evidence to conclusion" })).toBeVisible();
 });
