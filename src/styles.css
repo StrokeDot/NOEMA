@@ -1456,3 +1456,22 @@ padding:10px;background:var(--paper);min-width:0;}
 .chatgpt-accounts { display: grid; gap: 10px; }
 .chatgpt-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line, #ddded4); border-radius: 10px; }
 .chatgpt-account > div { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.dialogue-usage {
+  margin: .35rem 0;
+  font-size: .85rem;
+}
+.dialogue-usage > summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.dialogue-usage > p { margin: .45rem 0; }
+.dialogue-usage dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem 1.5rem;
+  margin: .5rem 0;
+}
+.dialogue-usage dt { opacity: .8; }
+.dialogue-usage dd { margin: .15rem 0 0; font-weight: 600; }
+.dialogue-usage small { display: block; margin-top: .25rem; }

@@ -71,7 +71,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 13 {
+        if ver > 14 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -141,10 +141,37 @@ impl Store {
             tx.execute_batch(include_str!("migrations/v13_dialogue_trash.sql"))?;
             tx.commit()?;
         }
+        if ver < 14 {
+            let transaction = conn.unchecked_transaction()?;
+            transaction.execute_batch(include_str!("migrations/v14_chatgpt_usage.sql"))?;
+            transaction.commit()?;
+        }
         Ok(Self { conn, root })
     }
+
+    pub fn record_chatgpt_usage(&self, turn_id: &str, tokens: Option<(i64, i64)>) -> Result<()> {
+        let (input, output) = tokens.unzip();
+        self.conn.execute(
+            "INSERT INTO chatgpt_usage (turn_id, completed_at, input_tokens, output_tokens)
+             VALUES (?, ?, ?, ?) ON CONFLICT(turn_id) DO NOTHING",
+            params![turn_id, now(), input, output],
+        )?;
+        Ok(())
+    }
+
     pub fn request(&mut self, action: &str, a: Value) -> Result<Value> {
         match action {
+            "chatgpt_usage_summary" => {
+                let week_ago = now() - 7 * 24 * 60 * 60 * 1000;
+                let summary = rows(
+                    &self.conn,
+                    "SELECT count(*) AS completed_requests, count(input_tokens) AS measured_requests,
+                            sum(input_tokens) AS input_tokens, sum(output_tokens) AS output_tokens
+                     FROM chatgpt_usage WHERE completed_at >= ?",
+                    [week_ago],
+                )?;
+                Ok(summary[0].clone())
+            }
             "projects" => rows(&self.conn, "SELECT * FROM projects ORDER BY created_at DESC", []),
             "create_project" => {
                 let title = required(&a, "title")?.trim();

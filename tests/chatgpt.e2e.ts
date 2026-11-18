@@ -33,6 +33,7 @@ test("subscription connection uses account models, preserves API options and cle
         if(command==="ai_reply")return {content:"Test-only reply"};
         if(command==="update_check")return {available:false};
         if(command==="chatgpt_status")return status();
+        if(command==="chatgpt_open_usage")return;
         if(command==="chatgpt_login"){
           const id=typeof args.accountId==="string"?args.accountId:accounts.length?"oaiapp_b":"oaiapp_a";
           const saved=accounts.find(a=>a.id===id);
@@ -72,6 +73,11 @@ test("subscription connection uses account models, preserves API options and cle
   await page.getByLabel("Conversation subject").fill("Book context");
   await page.getByLabel("Purpose for the book").fill("Develop ideas using the selected writing account.");
   await page.getByRole("button",{name:"Create dialogue"}).click();
+  await page.getByText("ChatGPT usage",{exact:true}).click();
+  await expect(page.getByText("NOEMA activity · Last 7 days")).toBeVisible();
+  await expect(page.locator(".dialogue-usage dd").first()).toHaveText("0");
+  await page.getByRole("button",{name:"Manage ChatGPT usage",exact:true}).click();
+  await page.getByText("ChatGPT usage",{exact:true}).click();
   await page.getByRole("button",{name:"Choose AI model"}).click();
   await expect(page.getByLabel("Selected AI model")).toHaveValue("account-a-model");
   await page.getByRole("button",{name:"Add another ChatGPT account",exact:true}).click();
@@ -88,6 +94,7 @@ test("subscription connection uses account models, preserves API options and cle
   await accountA.getByRole("button",{name:"Continue with saved account"}).click();
   await expect(page.getByLabel("Selected AI model")).toHaveValue("account-a-model");
   const commands=await page.evaluate(()=>(window as unknown as {noemaCommands:{command:string;args:Record<string,unknown>}[]}).noemaCommands);
+  expect(commands.some(c=>c.command==="chatgpt_open_usage")).toBe(true);
   expect(commands.some(c=>c.command==="ai_configure_provider")).toBe(false);
   expect(commands.some(c=>c.command==="ai_reply")).toBe(false);
   expect(commands.filter(c=>c.command==="chatgpt_login").at(-1)?.args.accountId).toBe("oaiapp_a");

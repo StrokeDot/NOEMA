@@ -1,6 +1,6 @@
-# NOEMA - Version 0.1.16
+# NOEMA - Version 0.1.17
 
-Version 0.1.16 opens ChatGPT sign-in through the Windows default browser and reports when Windows cannot launch it.
+Version 0.1.17 shows the last seven days of recorded ChatGPT requests and reported tokens under **ChatGPT usage** in the dialogue composer. **Manage ChatGPT usage** opens the official account dashboard.
 
 **Where Thought Becomes Legacy.**
 
