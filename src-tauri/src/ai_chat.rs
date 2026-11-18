@@ -388,7 +388,14 @@ pub async fn ai_reply(
     // The newest writer input is sent unchanged, never its inferred meaning.
     messages.push(json!({"role":"user","content":message}));
     let raw=if provider=="chatgpt" {
-        crate::chatgpt::reply(&chatgpt,model,&system,&messages).await?
+        let reply = crate::chatgpt::reply(&chatgpt, model, &system, &messages).await?;
+        // ChatGPT completed this request even if its reply cannot be used by the editor.
+        if let Ok(store) = db.lock() {
+            if store.record_chatgpt_usage(&turn_id, reply.tokens).is_err() {
+                eprintln!("NOEMA could not record ChatGPT usage.");
+            }
+        }
+        reply.text
     }else if provider=="harness" {
         crate::harness::reply(model,&messages).await?
     }else if provider=="deepseek" {

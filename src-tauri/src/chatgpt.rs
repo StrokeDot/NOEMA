@@ -404,8 +404,19 @@ pub async fn chatgpt_logout(state: State<'_, ChatGptState>, account_id: String) 
 }
 
 /// Byte-based SSE framing tolerates network chunks splitting UTF-8 or CRLF.
+pub struct ChatGptReply {
+    pub text: String,
+    pub tokens: Option<(i64, i64)>,
+}
+
 #[derive(Default)]
-struct ResponseStream { line: Vec<u8>, data: Vec<String>, text: String, completed: bool }
+struct ResponseStream {
+    line: Vec<u8>,
+    data: Vec<String>,
+    text: String,
+    completed: bool,
+    tokens: Option<(i64, i64)>,
+}
 impl ResponseStream {
     fn event(&mut self) -> Result<(), String> {
         if self.data.is_empty() { return Ok(()) }
@@ -417,7 +428,13 @@ impl ResponseStream {
                 self.text.push_str(event["delta"].as_str().ok_or("Invalid ChatGPT text event")?);
                 if self.text.len() > 2_000_000 { return Err("ChatGPT reply was too large".into()) }
             }
-            "response.completed" => self.completed = true,
+            "response.completed" => {
+                self.completed = true;
+                let usage = &event["response"]["usage"];
+                let input = usage["input_tokens"].as_i64().filter(|count| *count >= 0);
+                let output = usage["output_tokens"].as_i64().filter(|count| *count >= 0);
+                self.tokens = input.zip(output);
+            }
             "response.failed" | "response.incomplete" | "error" => {
                 let code = event["response"]["error"]["code"].as_str().or_else(|| event["code"].as_str()).unwrap_or("");
                 return Err(if matches!(code, "subscription_sharing_usage_limit_exceeded" | "subscription_sharing_usage_unavailable") {
@@ -444,12 +461,12 @@ impl ResponseStream {
         }
         if eof { if !self.line.is_empty() { self.push(b"\n", false)?; } self.event()?; } Ok(())
     }
-    fn finish(self) -> Result<String, String> {
+    fn finish(self) -> Result<ChatGptReply, String> {
         if !self.completed || self.text.trim().is_empty() { return Err("ChatGPT stream ended without a complete reply. Your original message is preserved.".into()) }
-        Ok(self.text)
+        Ok(ChatGptReply { text: self.text, tokens: self.tokens })
     }
 }
-pub async fn reply(state: &ChatGptState, model: &str, instructions: &str, messages: &[Value]) -> Result<String, String> {
+pub async fn reply(state: &ChatGptState, model: &str, instructions: &str, messages: &[Value]) -> Result<ChatGptReply, String> {
     let _guard = state.operation.lock().await; let mut vault = load_vault()?; let http = client()?;
     let token = active_token(&mut vault, &http).await?;
     let input: Vec<Value> = messages.iter().filter(|m| m["role"] == "user" || m["role"] == "assistant").cloned().collect();
@@ -497,10 +514,22 @@ mod tests {
         let data = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"café\"}\r\n\r\ndata: {\"type\":\"response.completed\"}\n\n";
         let mut stream = ResponseStream::default();
         for byte in data.as_bytes() { stream.push(&[*byte], false).unwrap(); }
-        stream.push(&[], true).unwrap(); assert_eq!(stream.finish().unwrap(), "café");
+        stream.push(&[], true).unwrap(); let reply = stream.finish().unwrap();
+        assert_eq!(reply.text, "café");
+        assert_eq!(reply.tokens, None);
         let mut broken = ResponseStream::default(); broken.push(b"data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n", true).unwrap();
         assert!(broken.finish().is_err());
     }
+    #[test]
+    fn stream_reads_tokens_from_the_completed_response() {
+        let mut stream = ResponseStream::default();
+        stream.push(
+            b"data: {\"type\":\"response.output_text.delta\",\"delta\":\"reply\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1500,\"output_tokens\":240}}}\n\n",
+            true,
+        ).unwrap();
+        assert_eq!(stream.finish().unwrap().tokens, Some((1500, 240)));
+    }
+
     #[test]
     fn late_plan_failure_never_saves_partial_output() {
         let mut stream = ResponseStream::default();

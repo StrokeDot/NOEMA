@@ -3,6 +3,7 @@ import {invoke,isTauri} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {request,errorText} from "./api";
 import ChatGptConnection,{emptyChatGptStatus,type ChatGptStatus,type ChatGptModel} from "./ChatGptConnection";
+import ChatGptUsage from "./ChatGptUsage";
 import HarnessConnection,{type HarnessModel} from "./HarnessConnection";
 import type {Document,Project} from "./types";
 type Turn={id:string;original_text:string;interpreted_text:string;interpretation_author_corrected:number;
@@ -720,6 +721,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
             </div>
           </div>
         </form>
+        {provider==="chatgpt"&&isTauri()&&<ChatGptUsage replyPending={busy}/>}
         <small className="dialogue-composer-hint">You decide what belongs in the manuscript. Enter to send · Shift+Enter for a new line.</small>
       </div>
     </div>
