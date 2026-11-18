@@ -72,3 +72,50 @@ test("book dialogue keeps separate conversation purposes and preserves them afte
   await expect(page.locator(".dialogue-thread")).toHaveCount(2);
   expect(errors).toEqual([]);
 });
+
+test("saved explanatory visuals render alongside the reply", async ({ page, request }) => {
+  async function store(action: string, args: Record<string, unknown>) {
+    const response = await request.post("http://127.0.0.1:4318/request", { data: { action, args } });
+    expect(response.ok(), await response.text()).toBe(true);
+    return response.json();
+  }
+
+  const project = await store("create_project", { title: "Illustrated book", author: "Author" });
+  const dialogue = await store("create_book_dialogue", {
+    project_id: project.id, title: "From evidence to claim", goal: "Refine the argument."
+  });
+  const context = { project_id: project.id, dialogue_id: dialogue.id };
+
+  const examples = [
+    { kind: "flow", title: "Evidence to conclusion" },
+    { kind: "timeline", title: "How the argument developed" },
+    { kind: "comparison", title: "Two readings of the evidence" }
+  ];
+  for (const example of examples) {
+    const turn = await store("begin_writing_turn", { ...context, original_text: example.title });
+    await store("complete_writing_turn", {
+      ...context, turn_id: turn.id, provider: "chatgpt", model: "test",
+      interpreted_text: "Explain the idea.", assistant_response: "Here is the written explanation.",
+      critical_review: "Check whether a different reading fits the evidence.",
+      visual: { ...example, items: [{ label: "Observation", detail: "<b>Look again</b>" }, { label: "Inference", detail: "" }] }
+    });
+  }
+
+  const openDialogue = async () => {
+    await page.getByRole("button", { name: "Open book: Illustrated book" }).click();
+    await page.getByRole("button", { name: "Book dialogue", exact: true }).click();
+  };
+  await page.goto("/");
+  await openDialogue();
+  for (const example of examples) {
+    const figure = page.getByRole("figure", { name: example.title });
+    await expect(figure).toBeVisible();
+    await expect(figure.locator("li")).toHaveText(["Observation<b>Look again</b>", "Inference"]);
+    await expect(figure.locator("b")).toHaveCount(0);
+    await expect(figure.locator("..").getByText("Here is the written explanation.")).toBeVisible();
+  }
+
+  await page.reload();
+  await openDialogue();
+  await expect(page.getByRole("figure", { name: "Evidence to conclusion" })).toBeVisible();
+});

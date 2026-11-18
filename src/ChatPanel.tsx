@@ -4,10 +4,11 @@ import {listen} from "@tauri-apps/api/event";
 import {request,errorText} from "./api";
 import ChatGptConnection,{emptyChatGptStatus,type ChatGptStatus,type ChatGptModel} from "./ChatGptConnection";
 import ChatGptUsage from "./ChatGptUsage";
+import ReplyVisual, {type ReplyVisualData} from "./ReplyVisual";
 import HarnessConnection,{type HarnessModel} from "./HarnessConnection";
 import type {Document,Project} from "./types";
 type Turn={id:string;original_text:string;interpreted_text:string;interpretation_author_corrected:number;
-  assistant_response:string;critical_review:string;critique_explored:number;provider:string;model:string;state:"pending"|"complete";created_at:number};
+  assistant_response:string;visual?:ReplyVisualData|null;critical_review:string;critique_explored:number;provider:string;model:string;state:"pending"|"complete";created_at:number};
 type Legacy={id:string;role:"user"|"assistant";content:string;provider:string;created_at:number};
 type Dialogue={id:string;title:string;goal:string;exchange_count:number;updated_at:number};
 type LocalModel={name:string;size?:number;model?:string};
@@ -661,6 +662,7 @@ export default function ChatPanel({project,activeChapter,onError,onCreateChapter
             <div className="dialogue-response-body">
               <div className="dialogue-message-meta">NOEMA · {turn.provider} · {turn.model} · Exchange {index+1}</div>
               <div className="dialogue-message-content">{turn.assistant_response}</div>
+              {turn.visual && <ReplyVisual visual={turn.visual} />}
               <details className="dialogue-interpretation">
                 <summary>How NOEMA understood you {turn.interpretation_author_corrected?"· corrected":""}</summary>
                 <div className="dialogue-message-content">{turn.interpreted_text}</div>
