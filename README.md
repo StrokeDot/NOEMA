@@ -1,4 +1,6 @@
-# NOEMA - Version 0.1.15
+# NOEMA - Version 0.1.16
+
+Version 0.1.16 opens ChatGPT sign-in through the Windows default browser and reports when Windows cannot launch it.
 
 **Where Thought Becomes Legacy.**
 
