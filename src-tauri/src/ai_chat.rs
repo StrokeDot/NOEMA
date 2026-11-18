@@ -70,12 +70,14 @@ pub fn ai_disconnect_provider(provider:String)->Result<Value,String>{
     Ok(json!({"provider":provider,"connected":false}))
 }
 fn chat_system(ctx:&Value)->String{
-    format!(r#"You are NOEMA, a thoughtful book-writing collaborator. Return ONE valid JSON object, with exactly these top-level keys:
+    format!(r#"You are NOEMA, a thoughtful book-writing collaborator. Return ONE valid JSON object with these top-level keys:
 "interpretation" (the coherent meaning of the writer's newest ORIGINAL message; improve organization and grammar, do not add unsupported assertions or subtly change the argument),
 "reply" (FIRST answer faithfully from the writer's explicitly confirmed frameworks and intentions, with citations by actual source location, without merely agreeing),
 "critical_review" (THEN offer the strongest genuinely relevant counterargument, possible factual weakness, alternative reading or structural critique; distinguish objections from evidence; if none is justified say so plainly),
 "profile_suggestions" (zero to three objects containing "dimension", "claim", "evidence_quote", where evidence_quote is an EXACT substring from the writer's newest input),
-"draft_candidate" (a book-ready potential passage only when the discussion yields one, otherwise empty string).
+"draft_candidate" (a book-ready potential passage only when the discussion yields one, otherwise empty string),
+"visual" (optional; include one only when it makes the reply easier to understand, such as a causal chain, a chronology or a comparison; otherwise omit it).
+When useful, add "visual" as an object with "kind" ("flow", "timeline", or "comparison"), a short "title", and "items" (2 to 4 objects, each containing a short "label" and a brief "detail" string, which can be empty). Order flow items by cause or step and timeline items by time. Use parallel labels for a comparison. Use plain text only, and never invent a date or fact to fill the visual. Keep the explanation in "reply" complete on its own.
 Use profile dimension only from: Writing voice; Reasoning style; Moral framework; Values and beliefs; Working preferences; Other.
 Never claim to know a diagnosis, hidden personality trait, moral status, or psychological state from casual language. Prefer no profile suggestion to speculation. An AI interpretation is an hypothesis until the writer confirms it.
 IMPORTANT: The writer's raw input is immutable. The interpretation must not be silently substituted for it.
@@ -108,6 +110,22 @@ fn response_schema()->Value {
             "reply":{"type":"string"},
             "critical_review":{"type":"string"},
             "draft_candidate":{"type":"string"},
+            "visual":{
+                "type":"object","additionalProperties":false,
+                "properties":{
+                    "kind":{"type":"string","enum":["flow","timeline","comparison"]},
+                    "title":{"type":"string","maxLength":120},
+                    "items":{"type":"array","minItems":2,"maxItems":4,"items":{
+                        "type":"object","additionalProperties":false,
+                        "properties":{
+                            "label":{"type":"string","maxLength":80},
+                            "detail":{"type":"string","maxLength":220}
+                        },
+                        "required":["label","detail"]
+                    }}
+                },
+                "required":["kind","title","items"]
+            },
             "profile_suggestions":{"type":"array","maxItems":3,"items":{
                 "type":"object","additionalProperties":false,
                 "properties":{
@@ -474,6 +492,7 @@ pub async fn ai_reply(
         "project_id":project_id,"turn_id":turn_id,"interpreted_text":interpreted,
         "assistant_response":clipped,"critical_review":critical_review,"provider":provider,"model":model,
         "original_evidence":message,
+        "visual":structured["visual"],
         "profile_suggestions":structured["profile_suggestions"],
         "draft_candidate":structured["draft_candidate"]
     })).map_err(|e|e.to_string())?;

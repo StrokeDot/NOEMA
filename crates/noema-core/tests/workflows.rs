@@ -284,7 +284,7 @@ fn backup_reopens_and_migration_is_repeatable() {
         b.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        14
+        15
     );
 }
 #[test]
@@ -355,7 +355,7 @@ fn book_gems_persist_preserve_original_and_isolate_books() {
     assert_eq!(gem[0]["origin"],"AI Assistant");
     assert_eq!(gem[0]["source_label"],"Conversation 12");
     assert_eq!(gem[0]["status"],"Approved");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),14);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),15);
     call(&mut store,"delete_gem",json!({"project_id":a,"id":id}));
     assert_eq!(call(&mut store,"gems",json!({"project_id":a})),json!([]));
     assert_eq!(store.conn.query_row("SELECT count(*) FROM book_gems WHERE id=?",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
@@ -426,7 +426,7 @@ fn scripts_and_reusable_frameworks_respect_project_activation() {
         "perspective":"External","principles":"Different premises","status":"Draft"}));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":script})),json!([]));
     assert_eq!(call(&mut reopened,"framework_context",json!({"project_id":book})),json!([]));
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),14);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),15);
 }
 
 #[test]
@@ -484,7 +484,7 @@ fn channel_profiles_group_scripts_and_references_respect_opt_in() {
     let mut reopened=Store::open(dir.path()).unwrap();
     assert_eq!(call(&mut reopened,"channel_scripts",json!({"channel_id":channel_b}))[0]["script_status"],"Published");
     assert_eq!(call(&mut reopened,"channels",json!({})).as_array().unwrap().len(),2);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),14);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),15);
 }
 #[test]
 fn legacy_script_migrates_without_losing_its_manuscript() {
@@ -545,7 +545,7 @@ fn video_cues_preserve_separate_narration_visuals_sources_and_revisions() {
     assert_eq!(cue["visuals"],"Slow close-up on Arthur");
     assert_eq!(cue["source_locator"],"RDR2 bench scene");
     assert_eq!(cue["planned_seconds"],15);
-    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),14);
+    assert_eq!(reopened.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),15);
     call(&mut reopened,"delete_script_cue",json!({"project_id":script,"id":cid}));
     assert_eq!(call(&mut reopened,"script_cues",json!({"project_id":script})).as_array().unwrap().len(),1);
     let retained:i64=reopened.conn.query_row("SELECT count(*) FROM script_cues WHERE id=?",[cid],|r|r.get(0)).unwrap();
@@ -684,7 +684,7 @@ fn v9_conversation_preserves_original_and_requires_writer_confirmation() {
     let mut store=Store::open(tmp.path()).unwrap();
     let book=project(&mut store,"The Book");
     let other=project(&mut store,"Different Book");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),14);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),15);
     let original="I don't have the full idea but I feel what responsibility mean, in the moment.";
     let turn=call(&mut store,"begin_writing_turn",json!({"project_id":book,"original_text":original}))["id"]
         .as_str().unwrap().to_string();
@@ -758,7 +758,7 @@ fn author_and_external_sources_are_isolated_and_critical_review_requires_acknowl
     let mut store=Store::open(dir.path().join("data")).unwrap();
     let book=project(&mut store,"Author's first book");
     let other=project(&mut store,"Other author's book");
-    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),14);
+    assert_eq!(store.conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),15);
     let author_source=dir.path().join("author.md");
     let external_source=dir.path().join("external.md");
     fs::write(&author_source,"The author proposes an early argument about moral freedom.").unwrap();
@@ -979,4 +979,59 @@ fn chatgpt_usage_survives_reopen_and_excludes_old_requests() {
             "output_tokens": 240
         })
     );
+}
+
+#[test]
+fn reply_visuals_migrate_keep_prose_and_survive_reopen() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut store = Store::open(directory.path()).unwrap();
+    let book = project(&mut store, "A book with earlier dialogue");
+    let original = call(&mut store, "begin_writing_turn", json!({
+        "project_id": book, "original_text": "An earlier thought."
+    }))["id"].clone();
+    call(&mut store, "complete_writing_turn", json!({
+        "project_id": book, "turn_id": original, "interpreted_text": "Earlier meaning",
+        "assistant_response": "The earlier response.", "critical_review": "The earlier challenge."
+    }));
+    store.conn.execute_batch(
+        "ALTER TABLE writing_turns DROP COLUMN reply_visual; PRAGMA user_version=14;",
+    ).unwrap();
+    drop(store);
+
+    let mut store = Store::open(directory.path()).unwrap();
+    let earlier = call(&mut store, "writing_turns", json!({"project_id": book}));
+    assert_eq!(earlier[0]["assistant_response"], "The earlier response.");
+    assert!(earlier[0]["visual"].is_null());
+
+    let visual = json!({
+        "kind": "flow", "title": "How a claim develops",
+        "items": [
+            {"label": "Premise", "detail": ""},
+            {"label": "Conclusion", "detail": "Check what follows."}
+        ]
+    });
+    let mut saved_turns = Vec::new();
+    for (input_visual, expected_visual) in [
+        (visual.clone(), visual),
+        (json!({"kind": "timeline", "items": []}), Value::Null),
+    ] {
+        let turn = call(&mut store, "begin_writing_turn", json!({
+            "project_id": book, "original_text": "A later thought."
+        }))["id"].clone();
+        call(&mut store, "complete_writing_turn", json!({
+            "project_id": book, "turn_id": turn, "interpreted_text": "Later meaning",
+            "assistant_response": "The later response.", "critical_review": "The later challenge.",
+            "visual": input_visual
+        }));
+        saved_turns.push((turn, expected_visual));
+    }
+    drop(store);
+
+    let mut reopened = Store::open(directory.path()).unwrap();
+    let turns = call(&mut reopened, "writing_turns", json!({"project_id": book}));
+    for (id, expected_visual) in saved_turns {
+        let turn = turns.as_array().unwrap().iter().find(|turn| turn["id"] == id).unwrap();
+        assert_eq!(turn["assistant_response"], "The later response.");
+        assert_eq!(turn["visual"], expected_visual);
+    }
 }

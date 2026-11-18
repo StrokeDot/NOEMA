@@ -50,6 +50,46 @@ fn rows(conn: &Connection, sql: &str, p: impl rusqlite::Params) -> Result<Value>
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(json!(vals))
 }
+fn visual_text(value: &Value, max: usize) -> Option<&str> {
+    let text = value.as_str()?.trim();
+    (text.chars().count() <= max).then_some(text)
+}
+
+fn normalized_reply_visual(value: &Value) -> Option<Value> {
+    let kind = value["kind"].as_str()?;
+    let title = visual_text(&value["title"], 120)?;
+    let items = value["items"].as_array()?;
+    if !matches!(kind, "flow" | "timeline" | "comparison")
+        || title.is_empty()
+        || !(2..=4).contains(&items.len())
+    {
+        return None;
+    }
+
+    let items = items
+        .iter()
+        .map(|item| {
+            let label = visual_text(&item["label"], 80)?;
+            let detail = visual_text(&item["detail"], 220)?;
+            (!label.is_empty()).then(|| json!({"label": label, "detail": detail}))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(json!({"kind": kind, "title": title, "items": items}))
+}
+
+fn writing_turn_rows(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> Result<Value> {
+    let mut turns = rows(conn, sql, params)?;
+    if let Some(items) = turns.as_array_mut() {
+        for turn in items {
+            turn["visual"] = turn["visual"]
+                .as_str()
+                .and_then(|stored| serde_json::from_str(stored).ok())
+                .unwrap_or(Value::Null);
+        }
+    }
+    Ok(turns)
+}
+
 fn to_chapter_html(text:&str)->String {
     text.split("\n\n").filter(|s|!s.trim().is_empty()).map(|paragraph|{
         let plain=paragraph.trim().replace('&',"&amp;").replace('<',"&lt;")
@@ -71,7 +111,7 @@ impl Store {
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
         )?;
         let ver: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if ver > 14 {
+        if ver > 15 {
             return Err(
                 "This database was created by a newer NOEMA version. Please update NOEMA.".into(),
             );
@@ -144,6 +184,11 @@ impl Store {
         if ver < 14 {
             let transaction = conn.unchecked_transaction()?;
             transaction.execute_batch(include_str!("migrations/v14_chatgpt_usage.sql"))?;
+            transaction.commit()?;
+        }
+        if ver < 15 {
+            let transaction = conn.unchecked_transaction()?;
+            transaction.execute_batch(include_str!("migrations/v15_reply_visuals.sql"))?;
             transaction.commit()?;
         }
         Ok(Self { conn, root })
@@ -438,9 +483,10 @@ impl Store {
                 if critique.len()>100_000{return Err("Critical review is too long".into());}
                 let suggestions=a["profile_suggestions"].as_array().cloned().unwrap_or_default();
                 let draft=a["draft_candidate"].as_str().unwrap_or("").trim();
+                let visual = normalized_reply_visual(&a["visual"]).map(|visual| visual.to_string());
                 let tx=self.conn.transaction()?;
-                let changed=tx.execute("UPDATE writing_turns SET interpreted_text=?,assistant_response=?,critical_review=?,provider=?,model=?,state='complete',updated_at=? WHERE id=? AND project_id=? AND state='pending'",
-                    params![interpreted,answer,critique,string(&a,"provider"),string(&a,"model"),now(),tid,pid])?;
+                let changed=tx.execute("UPDATE writing_turns SET interpreted_text=?,assistant_response=?,critical_review=?,provider=?,model=?,reply_visual=?,state='complete',updated_at=? WHERE id=? AND project_id=? AND state='pending'",
+                    params![interpreted,answer,critique,string(&a,"provider"),string(&a,"model"),visual,now(),tid,pid])?;
                 if changed!=1 {return Err("Conversation turn not found or already finalized".into());}
                 for item in suggestions.into_iter().take(3) {
                     let Some(dimension)=item["dimension"].as_str() else {continue};
@@ -474,8 +520,8 @@ impl Store {
                 if n!=1{return Err("Completed turn not found in this project".into());}
                 Ok(json!({"explored":explored}))
             }
-            "writing_turns" => rows(&self.conn,
-                "SELECT id,conversation_id,original_text,interpreted_text,interpretation_author_corrected,assistant_response,critical_review,critique_explored,provider,model,state,created_at FROM writing_turns WHERE project_id=? AND (?='' OR conversation_id IN (SELECT id FROM writing_conversations WHERE id=? AND project_id=writing_turns.project_id AND deleted_at=0)) ORDER BY created_at,id LIMIT 500",
+            "writing_turns" => writing_turn_rows(&self.conn,
+                "SELECT id,conversation_id,original_text,interpreted_text,interpretation_author_corrected,assistant_response,critical_review,critique_explored,provider,model,state,created_at,reply_visual AS visual FROM writing_turns WHERE project_id=? AND (?='' OR conversation_id IN (SELECT id FROM writing_conversations WHERE id=? AND project_id=writing_turns.project_id AND deleted_at=0)) ORDER BY created_at,id LIMIT 500",
                 params![required(&a,"project_id")?,string(&a,"dialogue_id"),string(&a,"dialogue_id")]),
             "correct_turn_meaning" => {
                 let pid=required(&a,"project_id")?;
@@ -674,8 +720,8 @@ impl Store {
                     params![pid])?;
                 let confirmed=rows(&self.conn,
                     "SELECT dimension,claim FROM writer_profile_notes WHERE state='Confirmed' ORDER BY updated_at DESC LIMIT 80",[])?;
-                let prior_turns=rows(&self.conn,
-                    "SELECT original_text,interpreted_text,assistant_response,critical_review,critique_explored FROM writing_turns WHERE project_id=? AND (?='' OR conversation_id=?) AND state='complete' ORDER BY created_at DESC,id DESC LIMIT 12",
+                let prior_turns=writing_turn_rows(&self.conn,
+                    "SELECT original_text,interpreted_text,assistant_response,critical_review,critique_explored,reply_visual AS visual FROM writing_turns WHERE project_id=? AND (?='' OR conversation_id=?) AND state='complete' ORDER BY created_at DESC,id DESC LIMIT 12",
                     params![pid,dialogue,dialogue])?;
                 Ok(json!({"project":meta[0],"dialogue":dialogue_meta.as_array().and_then(|arr|arr.first()).cloned(),"frameworks":frameworks,"established_positions":positions,"writer_profile":confirmed,"prior_turns":prior_turns,
                     "passages":passages,"recent_messages":recent,"recent_chapters":chapters}))

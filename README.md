@@ -1,6 +1,6 @@
-# NOEMA - Version 0.1.17
+# NOEMA - Version 0.1.18
 
-Version 0.1.17 shows the last seven days of recorded ChatGPT requests and reported tokens under **ChatGPT usage** in the dialogue composer. **Manage ChatGPT usage** opens the official account dashboard.
+Version 0.1.18 lets writing replies include a flow diagram, timeline, or comparison when it helps explain the answer. These visuals are saved with the dialogue.
 
 **Where Thought Becomes Legacy.**
 

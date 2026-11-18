@@ -1254,6 +1254,93 @@ padding:15px 18px 11px;border-radius:18px 18px 5px 18px;}
 font-family:Georgia,serif;font-size:16px;line-height:1;}
 [data-theme="dark"] .dialogue-avatar{color:#172017;}
 .dialogue-response-body{min-width:0;flex:1;padding-top:4px;}
+
+.dialogue-visual {
+  container-type: inline-size;
+  margin: 16px 0 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+}
+.dialogue-visual figcaption {
+  margin-bottom: 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+.dialogue-visual :is(ol, ul) {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dialogue-visual li {
+  position: relative;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.dialogue-visual li span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dialogue-visual:is(.dialogue-visual--flow, .dialogue-visual--comparison) li {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+.dialogue-visual--flow ol { gap: 18px; }
+.dialogue-visual--flow li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -12px;
+  width: 7px;
+  height: 7px;
+  border: solid var(--accent);
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateX(-50%) rotate(45deg);
+}
+.dialogue-visual--timeline ol {
+  gap: 14px;
+  margin-inline-start: 5px;
+  padding-inline-start: 15px;
+  border-inline-start: 1px solid var(--line);
+}
+.dialogue-visual--timeline li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -20px;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--accent);
+}
+.dialogue-visual--comparison ul {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+}
+@container (min-width: 540px) {
+  .dialogue-visual--flow ol {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+  .dialogue-visual--flow li:not(:last-child)::after {
+    top: 50%;
+    bottom: auto;
+    left: auto;
+    right: -12px;
+    transform: translateY(-50%) rotate(-45deg);
+  }
+}
 .dialogue-interpretation{margin:20px 0 0;border-top:1px solid var(--line);padding:12px 0;}
 .dialogue-interpretation summary{cursor:pointer;color:var(--muted);font-size:12px;font-weight:600;}
 .dialogue-interpretation .dialogue-message-content{padding-top:12px;color:var(--muted);}
