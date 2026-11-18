@@ -2464,7 +2464,7 @@ dependencies = [
 
 [[package]]
 name = "noema"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "base64 0.22.1",
  "jsonwebtoken",
@@ -2480,6 +2480,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "uuid",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

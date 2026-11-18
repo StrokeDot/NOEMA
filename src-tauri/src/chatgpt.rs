@@ -7,7 +7,7 @@ use reqwest::{Client, Url};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, sync::Mutex, time::{Duration, SystemTime, UNIX_EPOCH}};
-use tauri::State;
+use tauri::{AppHandle, State};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener, sync::{watch, Mutex as AsyncMutex}};
 use uuid::Uuid;
 
@@ -131,13 +131,47 @@ fn authorization_url(host: &str, redirect: &str, state: &str, nonce: &str, verif
     }
     Ok(url)
 }
-fn open_browser(url: &Url) -> Result<(), String> {
-    // All callers build the URL internally; no arbitrary command/URL from the UI.
+async fn open_browser(app: &AppHandle, url: &Url) -> Result<(), String> {
     #[cfg(target_os = "windows")]
-    { std::process::Command::new("explorer.exe").arg(url.as_str()).spawn()
-        .map_err(|_| "Could not open your browser")?; Ok(()) }
+    {
+        use std::ptr::null;
+        use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+
+        // Both URLs are constructed by NOEMA. Pass the URL as the Shell's
+        // target so Windows dispatches it to the registered HTTPS handler.
+        let url: Vec<u16> = url.as_str().encode_utf16().chain([0]).collect();
+        let verb: Vec<u16> = "open".encode_utf16().chain([0]).collect();
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            // SAFETY: Both UTF-16 buffers are NUL-terminated and live through
+            // this call. The optional parameters and directory are null.
+            let result = unsafe {
+                ShellExecuteW(
+                    std::ptr::null_mut(),
+                    verb.as_ptr(),
+                    url.as_ptr(),
+                    null(),
+                    null(),
+                    SW_SHOWNORMAL,
+                )
+            } as isize;
+            let _ = sender.send(result);
+        })
+        .map_err(|_| "NOEMA could not request a browser window. Restart NOEMA and try again.")?;
+
+        let result = receiver.await.map_err(|_| "The browser launch was interrupted.")?;
+        if result <= 32 {
+            return Err(format!(
+                "Windows could not open your browser (code {result}). Choose a default browser in Windows Settings → Apps → Default apps, then try again."
+            ));
+        }
+        Ok(())
+    }
     #[cfg(not(target_os = "windows"))]
-    { let _ = url; Err("ChatGPT sign-in is currently supported in NOEMA for Windows".into()) }
+    {
+        let _ = (app, url);
+        Err("ChatGPT sign-in is currently supported in NOEMA for Windows".into())
+    }
 }
 fn callback_fields(target: &str, expected_state: &str, selected: Option<&str>) -> Result<(String, String), String> {
     if !target.starts_with("/auth/callback?") { return Err("Unexpected callback path".into()) }
@@ -243,7 +277,7 @@ fn apply_tokens(account: &mut Value, token: &Value, refreshing: bool) -> Result<
     Ok(())
 }
 #[tauri::command]
-pub async fn chatgpt_login(state: State<'_, ChatGptState>, account_id: Option<String>) -> Result<Value, String> {
+pub async fn chatgpt_login(app: AppHandle, state: State<'_, ChatGptState>, account_id: Option<String>) -> Result<Value, String> {
     let _guard = state.operation.try_lock().map_err(|_| "A ChatGPT operation is already in progress")?;
     let mut vault = load_vault()?;
     let saved = if let Some(id) = account_id {
@@ -258,7 +292,7 @@ pub async fn chatgpt_login(state: State<'_, ChatGptState>, account_id: Option<St
     let (cancel, mut canceled) = watch::channel(false);
     *state.cancel.lock().map_err(|_| "Sign-in lock unavailable")? = Some(cancel);
     let flow = async {
-        open_browser(&url)?;
+        open_browser(&app, &url).await?;
         let selected = saved.as_ref().and_then(|a| a["client_id"].as_str());
         let (code, issued) = receive_callback(&listener, &oauth_state, selected).await?;
         let suffix: String = issued.chars().rev().take(8).collect::<String>().chars().rev().collect();
@@ -336,8 +370,9 @@ pub async fn chatgpt_models(state: State<'_, ChatGptState>) -> Result<Value, Str
     Ok(json!({"models": models}))
 }
 #[tauri::command]
-pub fn chatgpt_open_usage() -> Result<(), String> {
-    open_browser(&Url::parse("https://chatgpt.com/settings/usage").map_err(|_| "Invalid usage URL")?)
+pub async fn chatgpt_open_usage(app: AppHandle) -> Result<(), String> {
+    let url = Url::parse("https://chatgpt.com/settings/usage").map_err(|_| "Invalid usage URL")?;
+    open_browser(&app, &url).await
 }
 #[tauri::command]
 pub async fn chatgpt_logout(state: State<'_, ChatGptState>, account_id: String) -> Result<Value, String> {
